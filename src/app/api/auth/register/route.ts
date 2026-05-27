@@ -65,10 +65,10 @@ export async function POST(request: NextRequest) {
 
     if (signUpError || !authData.user) {
       console.error("Admin createUser error:", signUpError);
-      return NextResponse.json(
-        { error: signUpError?.message || "Failed to create account." },
-        { status: 500 }
-      );
+      const msg = signUpError?.message?.toLowerCase().includes("fetch")
+        ? "Unable to reach authentication service. Please try again."
+        : signUpError?.message || "Failed to create account.";
+      return NextResponse.json({ error: msg }, { status: 500 });
     }
 
     const authUserId = authData.user.id;
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
           first_name: trimmedName.split(" ")[0] || "Admin",
           last_name: trimmedName.split(" ").slice(1).join(" ") || "Administrator",
           email: emailStr,
-          phone: phoneStr,
+          phone: phoneStr ?? "",
           status: "active",
         });
 
