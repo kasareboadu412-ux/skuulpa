@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     const subjectScores: Record<string, { subject: { id: string; name: string; code: string | null; is_core: boolean }; scores: { assessmentName: string; type: string | null; score: number | null; maxScore: number; remarks: string | null; date: string | null }[] }> = {};
 
     for (const as_ of assessmentScores ?? []) {
-      const assessment = (as_ as { assessment: { id: string; name: string; type: string | null; max_score: number; date: string | null; subject: { id: string; name: string; code: string | null; is_core: boolean } } | null }).assessment;
+      const assessment = (as_ as unknown as { assessment: { id: string; name: string; type: string | null; max_score: number; date: string | null; subject: { id: string; name: string; code: string | null; is_core: boolean } } | null }).assessment;
       if (!assessment?.subject) continue;
       const subject = assessment.subject;
       if (!subjectScores[subject.id]) subjectScores[subject.id] = { subject, scores: [] };

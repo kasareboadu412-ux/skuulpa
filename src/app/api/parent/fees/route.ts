@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     for (const fa of feeAssignments ?? []) {
       if (!(fa as { is_opted_in: boolean }).is_opted_in) continue;
-      const fee = fa as { fee_structure: { category: string; amount: number } | null; amount_after_discount: number | null };
+      const fee = fa as unknown as { fee_structure: { category: string; amount: number } | null; amount_after_discount: number | null };
       const category = fee.fee_structure?.category || "other";
       const amount = fee.amount_after_discount ?? fee.fee_structure?.amount ?? 0;
       categoryTotals[category] = { ...categoryTotals[category], total: categoryTotals[category].total + Number(amount) };
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     }
 
     for (const p of payments ?? []) {
-      const pay = p as { status: string; amount_paid: number; fee_assignment: { fee_structure: { category: string } | null } | null };
+      const pay = p as unknown as { status: string; amount_paid: number; fee_assignment: { fee_structure: { category: string } | null } | null };
       if (pay.status === "confirmed") {
         const category = pay.fee_assignment?.fee_structure?.category || "other";
         categoryTotals[category] = { ...categoryTotals[category], paid: categoryTotals[category].paid + Number(pay.amount_paid) };

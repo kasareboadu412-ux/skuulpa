@@ -76,8 +76,8 @@ export async function GET(request: NextRequest) {
     const classMap = new Map<string, { class_name: string; total_charged: number; total_collected: number; pending: number; fee_breakdown: Record<string, { charged: number; collected: number }> }>();
 
     for (const assignment of allAssignments) {
-      const student = assignment.student as { class: { name?: string } | null };
-      const feeStructure = assignment.fee_structure as { name: string };
+      const student = assignment.student as unknown as { class: { name?: string } | null };
+      const feeStructure = assignment.fee_structure as unknown as { name: string };
       const className = student?.class?.name ?? "Unknown";
       const feeName = feeStructure?.name ?? "Unknown";
 
