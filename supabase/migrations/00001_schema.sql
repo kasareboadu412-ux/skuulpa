@@ -579,7 +579,7 @@ create policy "Users can view their own school data"
 create policy "School staff can read students"
   on students for select
   using (school_id = (select school_id from teachers where user_id = auth.uid())
-         or exists (select 1 from students s2 where s2.parent_phone = current_setting('app.parent_phone', true) and s2.id = students.id));
+         or exists (select 1 from students s2 where s2.parent_primary_phone = current_setting('app.parent_phone', true) and s2.id = students.id));
 
 create policy "Parents can view their children only"
   on students for select
