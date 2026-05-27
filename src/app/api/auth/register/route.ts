@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseServerClient, getServiceClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
 /**
  * POST /api/auth/register
  *
- * Register a new school with an admin/proprietor account.
- * Multi-tenant: each registration creates a new school tenant.
+ * Register a new school with a proprietor account.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -39,11 +38,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
     }
 
+    const sbAdmin = getServiceClient();
     const supabase = await createSupabaseServerClient();
-    const db = supabase as any;
 
-    // ─── Check if admin already exists ───
-    const { data: existingTeacher } = await db
+    // Check if email already registered
+    const { data: existingTeacher } = await sbAdmin
       .from("teachers")
       .select("id, email")
       .eq("email", emailStr)
@@ -56,16 +55,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ─── Create Supabase Auth user ───
-    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+    // Create Supabase Auth user with proprietor role
+    const { data: authData, error: signUpError } = await sbAdmin.auth.admin.createUser({
       email: emailStr,
       password: password as string,
-      options: {
-        data: { role: "admin", name: trimmedName },
-      },
+      email_confirm: true,
+      user_metadata: { role: "proprietor", name: trimmedName },
     });
 
     if (signUpError || !authData.user) {
+      console.error("Admin createUser error:", signUpError);
       return NextResponse.json(
         { error: signUpError?.message || "Failed to create account." },
         { status: 500 }
@@ -73,9 +72,9 @@ export async function POST(request: NextRequest) {
     }
 
     const authUserId = authData.user.id;
+    let schoolRow: { id: string; name: string; short_code: string } | null = null;
 
     try {
-      // ─── Generate short code ───
       const shortCode = schoolNameStr
         .split(" ")
         .map((w) => w[0])
@@ -83,8 +82,7 @@ export async function POST(request: NextRequest) {
         .toUpperCase()
         .slice(0, 5) || "SCH";
 
-      // ─── Create the school record ───
-      const { data: schoolResult, error: schoolError } = await db
+      const { data: schoolResult, error: schoolError } = await sbAdmin
         .from("schools")
         .insert({
           name: schoolNameStr,
@@ -102,17 +100,22 @@ export async function POST(request: NextRequest) {
         .select("id, name, short_code");
 
       if (schoolError || !schoolResult || schoolResult.length === 0) {
-        await supabase.auth.admin.deleteUser(authUserId);
+        await sbAdmin.auth.admin.deleteUser(authUserId);
         return NextResponse.json(
           { error: schoolError?.message ?? "Failed to create school." },
           { status: 500 }
         );
       }
 
-      const schoolRow = schoolResult[0];
+      schoolRow = schoolResult[0];
 
-      // ─── Create teacher record for the proprietor ───
-      const { error: teacherError } = await db
+      // Update user metadata to include school_id so API routes can resolve it
+      await sbAdmin.auth.admin.updateUserById(authUserId, {
+        user_metadata: { role: "proprietor", name: trimmedName, school_id: schoolRow.id },
+      });
+
+      // Create teacher/profile record for the proprietor
+      const { error: teacherError } = await sbAdmin
         .from("teachers")
         .insert({
           school_id: schoolRow.id,
@@ -125,17 +128,17 @@ export async function POST(request: NextRequest) {
         });
 
       if (teacherError) {
-        await supabase.auth.admin.deleteUser(authUserId);
-        await db.from("schools").delete().eq("id", schoolRow.id);
+        await sbAdmin.auth.admin.deleteUser(authUserId);
+        await sbAdmin.from("schools").delete().eq("id", schoolRow.id);
         return NextResponse.json(
           { error: "Failed to create profile. Please try again." },
           { status: 500 }
         );
       }
 
-      // ─── Create academic year and default terms ───
+      // Create academic year and default terms
       const year = new Date().getFullYear();
-      const { data: yearData } = await db
+      const { data: yearData } = await sbAdmin
         .from("academic_years")
         .insert({
           school_id: schoolRow.id,
@@ -154,7 +157,7 @@ export async function POST(request: NextRequest) {
           { name: "3rd Term", start: `${year + 1}-04-22`, end: `${year + 1}-08-01`, current: false },
         ];
         for (const term of terms) {
-          await db.from("terms").insert({
+          await sbAdmin.from("terms").insert({
             academic_year_id: yearData.id,
             name: term.name,
             start_date: term.start,
@@ -164,20 +167,19 @@ export async function POST(request: NextRequest) {
         }
       }
 
-
-      // ─── Assign free subscription plan ───
-      const { data: freePlan } = await db
+      // Assign free subscription plan
+      const { data: planRow } = await sbAdmin
         .from("subscription_plans")
         .select("id")
         .eq("code", "free")
         .maybeSingle();
 
-      if (freePlan) {
+      if (planRow) {
         const trialEnd = new Date();
         trialEnd.setDate(trialEnd.getDate() + 14);
-        await db.from("school_subscriptions").insert({
+        await sbAdmin.from("school_subscriptions").insert({
           school_id: schoolRow.id,
-          plan_id: freePlan.id,
+          plan_id: planRow.id,
           status: "trial",
           trial_ends_at: trialEnd.toISOString(),
           current_period_start: new Date().toISOString(),
@@ -186,19 +188,29 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // Sign in as the new user to establish session
+      const { data: { session } } = await supabase.auth.signInWithPassword({
+        email: emailStr,
+        password: password as string,
+      });
+
       return NextResponse.json({
         user: {
           id: authUserId,
           email: emailStr,
-          role: "admin",
+          role: "proprietor",
           school_id: schoolRow.id,
           school_name: schoolRow.name,
-          profile: { first_name: trimmedName, last_name: "Administrator" },
+          profile: {
+            first_name: trimmedName.split(" ")[0] || "Admin",
+            last_name: trimmedName.split(" ").slice(1).join(" ") || "Administrator",
+          },
         },
+        session,
       });
     } catch (err) {
-      // Cleanup on failure
-      try { await supabase.auth.admin.deleteUser(authUserId); } catch {}
+      try { await sbAdmin.auth.admin.deleteUser(authUserId); } catch {}
+      try { if (schoolRow?.id) await sbAdmin.from("schools").delete().eq("id", schoolRow.id); } catch {}
       return NextResponse.json(
         { error: "Registration failed. Please try again." },
         { status: 500 }

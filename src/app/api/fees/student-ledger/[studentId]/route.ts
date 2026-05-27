@@ -1,38 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requireStaff } from "@/lib/auth-guard";
+
+export const runtime = "nodejs";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ studentId: string }> }
 ) {
+  const auth = await requireStaff();
+  if (auth instanceof NextResponse) return auth;
+  const { schoolId } = auth;
+
   try {
     const { studentId } = await params;
+    const supabase = await createSupabaseServerClient();
 
-    // Get student details
     const { data: student, error: studentError } = await supabase
       .from("students")
       .select("*, class:classes(*)")
       .eq("id", studentId)
+      .eq("school_id", schoolId)
       .single();
 
-    if (studentError || !student) {
-      return NextResponse.json({ error: "Student not found" }, { status: 404 });
-    }
+    if (studentError || !student) return NextResponse.json({ error: "Student not found" }, { status: 404 });
 
-    // Get all fee assignments for this student (with structure and term)
     const { data: assignments, error: assignmentsError } = await supabase
       .from("fee_assignments")
-      .select(
-        "*, fee_structure:fee_structures(*), term:terms(*), fee_payments(*)",
-      )
+      .select("*, fee_structure:fee_structures(*), term:terms(*), fee_payments(*)")
       .eq("student_id", studentId)
       .order("created_at", { ascending: false });
 
-    if (assignmentsError) {
-      return NextResponse.json({ error: assignmentsError.message }, { status: 400 });
-    }
+    if (assignmentsError) return NextResponse.json({ error: "Failed to fetch fee assignments" }, { status: 400 });
 
-    // Get all payments not tied to a specific assignment (bulk/other payments)
     const { data: orphanPayments } = await supabase
       .from("fee_payments")
       .select("*")
@@ -40,7 +40,6 @@ export async function GET(
       .is("fee_assignment_id", null)
       .order("payment_date", { ascending: false });
 
-    // Calculate full ledger summary
     let totalCharged = 0;
     let totalPaid = 0;
     let pendingPayments = 0;
@@ -48,29 +47,22 @@ export async function GET(
     const enrichedAssignments = (assignments ?? []).map((assignment) => {
       const charged = Number(assignment.amount_after_discount ?? 0);
       const paid = (assignment.fee_payments ?? [])
-        .filter((p: any) => p.status === "confirmed")
-        .reduce((sum: number, p: any) => sum + Number(p.amount_paid), 0);
+        .filter((p: { status: string }) => p.status === "confirmed")
+        .reduce((sum: number, p: { amount_paid: number }) => sum + Number(p.amount_paid), 0);
       const pending = (assignment.fee_payments ?? [])
-        .filter((p: any) => p.status === "pending")
-        .reduce((sum: number, p: any) => sum + Number(p.amount_paid), 0);
+        .filter((p: { status: string }) => p.status === "pending")
+        .reduce((sum: number, p: { amount_paid: number }) => sum + Number(p.amount_paid), 0);
 
       totalCharged += charged;
       totalPaid += paid;
       pendingPayments += pending;
 
-      return {
-        ...assignment,
-        total_charged: charged,
-        total_paid: paid,
-        pending_amount: pending,
-        balance: charged - paid,
-      };
+      return { ...assignment, total_charged: charged, total_paid: paid, pending_amount: pending, balance: charged - paid };
     });
 
-    const orphanTotalPaid =
-      (orphanPayments ?? [])
-        .filter((p: any) => p.status === "confirmed")
-        .reduce((sum: number, p: any) => sum + Number(p.amount_paid), 0);
+    const orphanTotalPaid = (orphanPayments ?? [])
+      .filter((p: { status: string }) => p.status === "confirmed")
+      .reduce((sum: number, p: { amount_paid: number }) => sum + Number(p.amount_paid), 0);
 
     totalPaid += orphanTotalPaid;
 
@@ -84,17 +76,11 @@ export async function GET(
           total_paid: totalPaid,
           outstanding_balance: Math.max(0, totalCharged - totalPaid),
           pending_payments: pendingPayments,
-          collection_rate:
-            totalCharged > 0
-              ? Math.round((totalPaid / totalCharged) * 10000) / 100
-              : 0,
+          collection_rate: totalCharged > 0 ? Math.round((totalPaid / totalCharged) * 10000) / 100 : 0,
         },
       },
     });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

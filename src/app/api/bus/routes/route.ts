@@ -1,53 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { requireStaff } from "@/lib/auth-guard";
+
+export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const school_id = searchParams.get("school_id");
+  const auth = await requireStaff();
+  if (auth instanceof NextResponse) return auth;
+  const { schoolId } = auth;
 
-    let query = supabase
+  try {
+    const supabase = await createSupabaseServerClient();
+
+    const { data, error } = await supabase
       .from("bus_routes")
       .select("*, bus_stops(*), bus_subscriptions(count)")
+      .eq("school_id", schoolId)
       .order("name", { ascending: true });
 
-    if (school_id) {
-      query = query.eq("school_id", school_id);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
+    if (error) return NextResponse.json({ error: "Failed to fetch bus routes" }, { status: 400 });
     return NextResponse.json({ data });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
+  const auth = await requireStaff();
+  if (auth instanceof NextResponse) return auth;
+  const { schoolId } = auth;
 
+  try {
+    const supabase = await createSupabaseServerClient();
+    const body = await request.json();
     const { zones, bus_stops, ...routeData } = body;
 
-    // Create the bus route
     const { data: route, error: routeError } = await supabase
       .from("bus_routes")
-      .insert([{ ...routeData, zones: zones ?? [] }])
+      .insert([{ ...routeData, school_id: schoolId, zones: zones ?? [] }])
       .select("*")
       .single();
 
-    if (routeError) {
-      return NextResponse.json({ error: routeError.message }, { status: 400 });
-    }
+    if (routeError) return NextResponse.json({ error: "Failed to create bus route" }, { status: 400 });
 
-    // Create bus stops if provided
     if (bus_stops && Array.isArray(bus_stops) && bus_stops.length > 0) {
       const stopsWithRouteId = bus_stops.map(
         (stop: { name: string; address?: string; lat?: number; lng?: number; sort_order?: number }) => ({
@@ -65,21 +60,12 @@ export async function POST(request: NextRequest) {
         .insert(stopsWithRouteId)
         .select("*");
 
-      if (stopsError) {
-        return NextResponse.json({ error: stopsError.message }, { status: 400 });
-      }
-
-      return NextResponse.json(
-        { data: { ...route, bus_stops: createdStops } },
-        { status: 201 }
-      );
+      if (stopsError) return NextResponse.json({ error: "Failed to create bus stops" }, { status: 400 });
+      return NextResponse.json({ data: { ...route, bus_stops: createdStops } }, { status: 201 });
     }
 
     return NextResponse.json({ data: route }, { status: 201 });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

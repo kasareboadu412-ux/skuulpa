@@ -176,11 +176,12 @@ async function handleStaffLogin(body: Record<string, unknown>) {
   // ─── Check if super admin ───
   const { data: superAdmin } = await (supabase as any)
     .from("super_admins")
-    .select("id, role")
+    .select("id, role, is_active")
     .eq("email", user.email)
     .maybeSingle();
 
-  const finalRole = superAdmin ? "super_admin" : role;
+  const isSuperAdmin = !!superAdmin && superAdmin.is_active !== false;
+  const finalRole = isSuperAdmin ? "super_admin" : role;
 
   // ─── Return user and session ───
   return NextResponse.json({
@@ -188,8 +189,8 @@ async function handleStaffLogin(body: Record<string, unknown>) {
       id: user.id,
       email: user.email,
       role: finalRole,
-      is_super_admin: !!superAdmin,
-      super_admin_role: superAdmin?.role ?? null,
+      is_super_admin: isSuperAdmin,
+      super_admin_role: isSuperAdmin ? (superAdmin?.role ?? null) : null,
       profile,
     },
     session: {
