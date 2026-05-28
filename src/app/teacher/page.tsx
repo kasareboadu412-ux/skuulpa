@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ClipboardCheck,
@@ -8,452 +8,239 @@ import {
   BookOpen,
   Clock,
   Users,
-  GraduationCap,
-  AlertCircle,
-  CalendarDays,
   CheckCircle2,
-  TrendingUp,
+  LogOut,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
-interface DashboardData {
+interface TeacherMe {
   teacher: {
     id: string;
     first_name: string;
     last_name: string;
-  } | null;
-  classes: { id: string; name: string; student_count?: number }[];
-  subjects: { id: string; name: string; class_name?: string }[];
-  todaySessions: { name: string; time: string; class_name: string }[];
-  recentActivity: {
-    type: string;
-    description: string;
-    time: string;
-  }[];
-  studentCount: number;
-  pendingAssessments: number;
-  pendingHomework: number;
-  attendanceRate: number;
+    employee_id: string | null;
+    status: string;
+  };
+  owned_classes: Array<{ id: string; name: string; students?: Array<{ count: number }> }>;
+  subject_assignments: Array<{ class_id: string; subject_id: string; class?: { id: string; name: string } | null; subject?: { id: string; name: string; code: string | null } | null }>;
+  today_attendance: { clock_in_time: string | null; clock_out_time: string | null; is_late: boolean; late_minutes: number | null } | null;
 }
 
 export default function TeacherDashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [data, setData] = useState<TeacherMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [clockedIn, setClockedIn] = useState(false);
-  const [clockInTime, setClockInTime] = useState<string | null>(null);
+  const [clocking, setClocking] = useState(false);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  async function loadDashboard() {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Load teacher profile
-      const { data: teacher } = await supabase
-        .from("teachers")
-        .select("id, first_name, last_name, user_id")
-        .eq("user_id", user.id)
-        .single();
-
-      if (!teacher) {
-        setError("Teacher profile not found. Please contact admin.");
+      const res = await fetch("/api/teachers/me");
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error || "Failed to load teacher profile");
         return;
       }
-
-      // Load teacher's class assignments with subject info
-      const { data: assignments } = await supabase
-        .from("teacher_subject_assignments")
-        .select("class_id, subject_id, classes!inner(name), subjects!inner(name)")
-        .eq("teacher_id", teacher.id);
-
-      // Get unique classes
-      const classMap = new Map<string, { id: string; name: string }>();
-      const subjectList: { id: string; name: string; class_name: string }[] = [];
-
-      if (assignments) {
-        for (const a of assignments) {
-          const classEntry = a.classes as unknown as { id: string; name: string };
-          if (classEntry && !classMap.has(classEntry.id)) {
-            classMap.set(classEntry.id, { id: classEntry.id, name: classEntry.name });
-          }
-          subjectList.push({
-            id: a.subject_id || "",
-            name: (a.subjects as unknown as { name: string })?.name || "Unknown",
-            class_name: classEntry?.name || "Unknown",
-          });
-        }
-      }
-
-      const classes = Array.from(classMap.values());
-
-      // Count students in teacher's classes
-      const classIds = classes.map(c => c.id);
-      let studentCount = 0;
-      if (classIds.length > 0) {
-        const { count } = await supabase
-          .from("students")
-          .select("*", { count: "exact", head: true })
-          .in("class_id", classIds)
-          .eq("status", "active");
-        studentCount = count || 0;
-      }
-
-      // Load today's teacher attendance status
-      const today = new Date().toISOString().split("T")[0];
-      const { data: attendance } = await supabase
-        .from("teacher_attendance")
-        .select("*")
-        .eq("teacher_id", teacher.id)
-        .eq("date", today)
-        .single();
-
-      setClockedIn(!!attendance?.clock_in_time && !attendance?.clock_out_time);
-      setClockInTime(attendance?.clock_in_time || null);
-
-      // Load pending assessments (assessments without scores for this teacher)
-      const { data: assessments } = await supabase
-        .from("assessments")
-        .select("id, name, class_id, classes!inner(name)")
-        .eq("teacher_id", teacher.id);
-
-      // Load pending homeworks
-      const { data: homeworks } = await supabase
-        .from("homework")
-        .select("id")
-        .eq("teacher_id", teacher.id);
-
-      // Calculate attendance rate from attendance_records across teacher's classes
-      let attendanceRate = 0;
-      if (classIds.length > 0) {
-        const { data: records } = await supabase
-          .from("attendance_records")
-          .select("status")
-          .in("class_id", classIds);
-        if (records && records.length > 0) {
-          const present = records.filter(r => r.status === "present" || r.status === "late").length;
-          attendanceRate = Math.round((present / records.length) * 100);
-        }
-      }
-
-      setData({
-        teacher,
-        classes,
-        subjects: subjectList,
-        todaySessions: [
-          { name: "Mathematics", time: "08:00 - 09:00", class_name: classes[0]?.name || "" },
-          { name: "English", time: "09:00 - 10:00", class_name: classes[0]?.name || "" },
-          { name: "Science", time: "10:30 - 11:30", class_name: classes[1]?.name || classes[0]?.name || "" },
-        ],
-        recentActivity: [],
-        studentCount,
-        pendingAssessments: assessments?.length || 0,
-        pendingHomework: homeworks?.length || 0,
-        attendanceRate,
-      });
-    } catch (err) {
-      console.error("Dashboard loading error:", err);
-      setError("Failed to load dashboard data.");
+      setData(json.data);
+    } catch {
+      setError("Network error");
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function handleClockToggle() {
+  useEffect(() => { void load(); }, [load]);
+
+  const clock = async (action: "in" | "out") => {
+    setClocking(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !data?.teacher) return;
-
-      const today = new Date().toISOString().split("T")[0];
-      const now = new Date().toTimeString().split(" ")[0];
-
-      if (!clockedIn) {
-        const { error } = await supabase.from("teacher_attendance").upsert(
-          {
-            teacher_id: data.teacher.id,
-            date: today,
-            clock_in_time: now,
-            is_present: true,
-            is_late: parseInt(now.split(":")[0]) >= 8,
-            late_minutes: Math.max(0, (parseInt(now.split(":")[0]) - 8) * 60 + parseInt(now.split(":")[1])),
-          },
-          { onConflict: "teacher_id, date" }
-        );
-        if (error) throw error;
-        setClockedIn(true);
-        setClockInTime(now);
-        toast.success("Clocked in successfully!");
-      } else {
-        const { error } = await supabase
-          .from("teacher_attendance")
-          .update({ clock_out_time: now })
-          .eq("teacher_id", data.teacher.id)
-          .eq("date", today);
-        if (error) throw error;
-        setClockedIn(false);
-        setClockInTime(null);
-        toast.success("Clocked out successfully!");
-      }
-    } catch (err) {
-      console.error("Clock error:", err);
-      toast.error("Failed to record attendance");
+      const res = await fetch("/api/teachers/me", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || "Failed"); return; }
+      toast.success(action === "in" ? "Clocked in" : "Clocked out");
+      void load();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setClocking(false);
     }
-  }
-
-  const quickActions = [
-    {
-      label: "Take Attendance",
-      href: "/teacher/attendance",
-      icon: ClipboardCheck,
-      color: "bg-blue-500",
-      description: "Record daily student attendance",
-    },
-    {
-      label: "Enter Grades",
-      href: "/teacher/assessments",
-      icon: FileSpreadsheet,
-      color: "bg-green-500",
-      description: "Record assessment scores",
-    },
-    {
-      label: "Post Homework",
-      href: "/teacher/homework",
-      icon: BookOpen,
-      color: "bg-purple-500",
-      description: "Assign homework to students",
-    },
-  ];
+  };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-4" />
-          <p className="text-sm text-muted-foreground">Loading dashboard...</p>
+      <div className="p-6 space-y-6">
+        <div className="h-8 bg-gray-200 rounded w-64 animate-pulse" />
+        <div className="grid gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (<div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />))}
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (error || !data) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center gap-4 py-8">
-            <AlertCircle className="h-12 w-12 text-destructive" />
-            <p className="text-destructive font-medium">{error}</p>
-            <Button onClick={loadDashboard}>Retry</Button>
+      <div className="p-8">
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-gray-600 mb-2">{error || "Teacher profile not found"}</p>
+            <p className="text-sm text-gray-500">If you&apos;re a teacher, ask your school admin to add you in the Teachers section.</p>
           </CardContent>
         </Card>
       </div>
     );
   }
+
+  const t = data.teacher;
+  const today = new Date().toLocaleDateString("en-GH", { weekday: "long", month: "long", day: "numeric" });
+  const isClockedIn = !!data.today_attendance?.clock_in_time && !data.today_attendance?.clock_out_time;
+  const studentCount = data.owned_classes.reduce((s, c) => s + (c.students?.[0]?.count ?? 0), 0);
+  const subjectsTaught = new Set(data.subject_assignments.map((a) => a.subject?.id).filter(Boolean)).size;
 
   return (
-    <div className="space-y-6">
-      {/* Welcome header */}
+    <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Welcome, {data?.teacher?.first_name || "Teacher"}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {new Date().toLocaleDateString("en-GH", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Welcome, {t.first_name}</h1>
+          <p className="text-sm text-gray-500 mt-1">{today}</p>
         </div>
-        <Button
-          size="lg"
-          variant={clockedIn ? "outline" : "default"}
-          onClick={handleClockToggle}
-          className="flex items-center gap-2"
-        >
-          <Clock className="h-5 w-5" />
-          {clockedIn
-            ? `Clocked in at ${clockInTime?.slice(0, 5) || ""} — Tap to clock out`
-            : "Clock In"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {isClockedIn ? (
+            <Button onClick={() => clock("out")} variant="outline" disabled={clocking}>
+              <LogOut className="h-4 w-4 mr-2" /> Clock out
+            </Button>
+          ) : (
+            <Button onClick={() => clock("in")} disabled={clocking}>
+              <Clock className="h-4 w-4 mr-2" />
+              {data.today_attendance?.clock_in_time ? "Clocked out today" : "Clock in"}
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {quickActions.map((action) => {
-          const Icon = action.icon;
-          return (
-            <Link key={action.href} href={action.href}>
-              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-                <CardContent className="p-4 flex items-start gap-4">
-                  <div className={`${action.color} p-2.5 rounded-lg`}>
-                    <Icon className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{action.label}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">{action.description}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* Workload summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <GraduationCap className="h-8 w-8 text-blue-500" />
-            <div>
-              <p className="text-2xl font-bold">{data?.classes.length || 0}</p>
-              <p className="text-xs text-muted-foreground">Classes Taught</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <Users className="h-8 w-8 text-green-500" />
-            <div>
-              <p className="text-2xl font-bold">{data?.studentCount || 0}</p>
-              <p className="text-xs text-muted-foreground">My Students</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <FileSpreadsheet className="h-8 w-8 text-amber-500" />
-            <div>
-              <p className="text-2xl font-bold">{data?.pendingAssessments || 0}</p>
-              <p className="text-xs text-muted-foreground">Assessments</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <TrendingUp className="h-8 w-8 text-purple-500" />
-            <div>
-              <p className="text-2xl font-bold">{data?.attendanceRate || 0}%</p>
-              <p className="text-xs text-muted-foreground">Attendance Rate</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Today's timetable */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <CalendarDays className="h-5 w-5 text-blue-500" />
-              Today's Schedule
-            </CardTitle>
-            <CardDescription>Your classes for today</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {data?.todaySessions.length ? (
-              <div className="space-y-3">
-                {data.todaySessions.map((session, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium text-sm text-gray-900">{session.name}</p>
-                      <p className="text-xs text-muted-foreground">{session.class_name}</p>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {session.time}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No classes scheduled for today
+      {data.today_attendance?.clock_in_time && (
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="py-3 flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-blue-600" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-900">
+                Clocked in at {data.today_attendance.clock_in_time}
+                {data.today_attendance.clock_out_time && ` · out at ${data.today_attendance.clock_out_time}`}
               </p>
-            )}
+              {data.today_attendance.is_late && (
+                <p className="text-xs text-amber-700">
+                  Late by {data.today_attendance.late_minutes} min
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
+      )}
 
-        {/* Subjects taught */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">My Classes</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{data.owned_classes.length}</p>
+            <p className="text-xs text-gray-500 mt-1">As class teacher</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">Students</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{studentCount}</p>
+            <p className="text-xs text-gray-500 mt-1">In owned classes</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">Subjects Taught</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{subjectsTaught}</p>
+            <p className="text-xs text-gray-500 mt-1">{data.subject_assignments.length} assignments</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">Status</CardTitle></CardHeader>
+          <CardContent>
+            <Badge variant={t.status === "active" ? "success" : "warning"}>{t.status}</Badge>
+            {t.employee_id && <p className="text-xs text-gray-500 mt-1">ID: {t.employee_id}</p>}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-green-500" />
-              My Subjects
-            </CardTitle>
-            <CardDescription>Subjects you are assigned to teach</CardDescription>
+            <CardTitle>My Classes</CardTitle>
+            <CardDescription>Classes you are the form teacher for</CardDescription>
           </CardHeader>
           <CardContent>
-            {data?.subjects.length ? (
+            {data.owned_classes.length === 0 ? (
+              <p className="text-sm text-gray-500">You have not been assigned as form teacher to any class yet.</p>
+            ) : (
               <div className="space-y-2">
-                {data.subjects.map((subject, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <span className="font-medium text-sm">{subject.name}</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {subject.class_name}
-                    </Badge>
-                  </div>
+                {data.owned_classes.map((c) => (
+                  <Link key={c.id} href={`/teacher/classes/${c.id}`} className="block">
+                    <div className="rounded-lg border p-3 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium">{c.name}</p>
+                        <span className="text-xs text-gray-500">{c.students?.[0]?.count ?? 0} students</span>
+                      </div>
+                    </div>
+                  </Link>
                 ))}
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No subjects assigned yet
-              </p>
             )}
           </CardContent>
         </Card>
 
-        {/* Recent activity */}
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-gray-500" />
-              Recent Activity
-            </CardTitle>
-            <CardDescription>Your latest actions in the system</CardDescription>
+            <CardTitle>Subject Assignments</CardTitle>
+            <CardDescription>Subjects you teach in various classes</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-6">
-              <p className="text-sm text-muted-foreground">
-                Activity feed will populate as you take attendance, enter grades, and post homework.
-              </p>
-              <div className="flex flex-wrap justify-center gap-2 mt-4">
-                <Link href="/teacher/attendance">
-                  <Button size="sm" variant="outline" className="flex items-center gap-1">
-                    <ClipboardCheck className="h-4 w-4" />
-                    Take Attendance
-                  </Button>
-                </Link>
-                <Link href="/teacher/assessments">
-                  <Button size="sm" variant="outline" className="flex items-center gap-1">
-                    <FileSpreadsheet className="h-4 w-4" />
-                    Enter Grades
-                  </Button>
-                </Link>
-                <Link href="/teacher/homework">
-                  <Button size="sm" variant="outline" className="flex items-center gap-1">
-                    <BookOpen className="h-4 w-4" />
-                    Post Homework
-                  </Button>
-                </Link>
+            {data.subject_assignments.length === 0 ? (
+              <p className="text-sm text-gray-500">No subject assignments yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {data.subject_assignments.map((a, i) => (
+                  <div key={i} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm">{a.subject?.name ?? "—"}</p>
+                        <p className="text-xs text-gray-500">{a.class?.name ?? "—"}</p>
+                      </div>
+                      {a.subject?.code && <Badge variant="secondary">{a.subject.code}</Badge>}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+          <CardDescription>Common teacher tasks</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          <Link href="/teacher/attendance"><Button variant="outline" className="w-full justify-start"><ClipboardCheck className="h-4 w-4 mr-2" />Take Attendance</Button></Link>
+          <Link href="/teacher/assessments"><Button variant="outline" className="w-full justify-start"><FileSpreadsheet className="h-4 w-4 mr-2" />Assessments</Button></Link>
+          <Link href="/teacher/schemes"><Button variant="outline" className="w-full justify-start"><BookOpen className="h-4 w-4 mr-2" />Schemes of Work</Button></Link>
+          <Link href="/teacher/students"><Button variant="outline" className="w-full justify-start"><Users className="h-4 w-4 mr-2" />My Students</Button></Link>
+          <Link href="/teacher/behavior"><Button variant="outline" className="w-full justify-start"><ClipboardCheck className="h-4 w-4 mr-2" />Behavior Log</Button></Link>
+          <Link href="/teacher/homework"><Button variant="outline" className="w-full justify-start"><FileSpreadsheet className="h-4 w-4 mr-2" />Homework</Button></Link>
+        </CardContent>
+      </Card>
     </div>
   );
 }

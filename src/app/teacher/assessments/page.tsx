@@ -1,21 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  FileSpreadsheet,
-  Plus,
-  Save,
-  BarChart3,
-  CheckCircle2,
-  AlertCircle,
-  X,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { FileSpreadsheet, Plus, X, Calendar, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { formatDate } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -23,678 +15,321 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+
+interface ClassOption { id: string; name: string }
+interface SubjectOption { id: string; name: string }
+interface Term { id: string; name: string; is_current?: boolean }
 
 interface Assessment {
   id: string;
   name: string;
   type: string | null;
   max_score: number;
-  ca_weight_pct: number;
   date: string | null;
-  subject_id: string | null;
-  class_id: string;
-  subject_name?: string;
-  class_name?: string;
-  scores_count: number;
-  total_students: number;
+  class?: ClassOption | null;
+  subject?: SubjectOption | null;
+  term?: Term | null;
+  assessment_scores?: Array<{ count: number }>;
 }
 
-interface StudentScore {
-  student_id: string;
-  first_name: string;
-  last_name: string;
-  admission_number: string | null;
-  score: string;
-  existing_score_id?: string;
-  existing_score: number | null;
-  remarks: string;
-}
+interface Student { id: string; first_name: string; last_name: string }
 
-interface SubjectOption {
-  id: string;
-  name: string;
-}
+interface Score { student_id: string; score: number | null }
 
-export default function AssessmentsPage() {
+export default function TeacherAssessmentsPage() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [classes, setClasses] = useState<ClassOption[]>([]);
+  const [subjects, setSubjects] = useState<SubjectOption[]>([]);
+  const [terms, setTerms] = useState<Term[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // Create form
-  const [createForm, setCreateForm] = useState({
+  const [showCreate, setShowCreate] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
     name: "",
-    type: "quiz" as string,
-    max_score: "100",
-    ca_weight_pct: "0",
-    date: new Date().toISOString().split("T")[0],
+    type: "test",
     class_id: "",
     subject_id: "",
+    term_id: "",
+    max_score: "100",
+    date: new Date().toISOString().split("T")[0],
   });
-  const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
-  const [subjects, setSubjects] = useState<SubjectOption[]>([]);
-  const [creating, setCreating] = useState(false);
 
-  // Score entry
-  const [students, setStudents] = useState<StudentScore[]>([]);
+  // Score-entry modal state
+  const [scoreModal, setScoreModal] = useState<{ open: boolean; assessment: Assessment | null }>({ open: false, assessment: null });
+  const [roster, setRoster] = useState<Student[]>([]);
+  const [scores, setScores] = useState<Record<string, string>>({});
   const [savingScores, setSavingScores] = useState(false);
-  const [expandedStats, setExpandedStats] = useState(false);
-  const [teacherId, setTeacherId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTeacherAndData();
-  }, []);
-
-  async function loadTeacherAndData() {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const meRes = await fetch("/api/teachers/me");
+      const meJson = await meRes.json();
+      if (!meRes.ok) { toast.error(meJson.error || "Failed"); return; }
+      const me = meJson.data;
 
-      const { data: teacher } = await supabase
-        .from("teachers")
-        .select("id")
-        .eq("user_id", user.id)
-        .single();
+      const classMap = new Map<string, ClassOption>();
+      const subjectMap = new Map<string, SubjectOption>();
+      me.owned_classes.forEach((c: ClassOption) => classMap.set(c.id, c));
+      me.subject_assignments.forEach((a: { class?: ClassOption | null; subject?: SubjectOption | null }) => {
+        if (a.class) classMap.set(a.class.id, a.class);
+        if (a.subject) subjectMap.set(a.subject.id, a.subject);
+      });
+      setClasses(Array.from(classMap.values()));
+      setSubjects(Array.from(subjectMap.values()));
 
-      if (teacher) {
-        setTeacherId(teacher.id);
-
-        // Load classes
-        const { data: tClasses } = await supabase
-          .from("classes")
-          .select("id, name")
-          .eq("teacher_id", teacher.id);
-
-        const { data: assignments } = await supabase
-          .from("teacher_subject_assignments")
-          .select("class_id, classes!inner(id, name)")
-          .eq("teacher_id", teacher.id);
-
-        const classMap = new Map<string, string>();
-        if (tClasses) tClasses.forEach((c: { id: string; name: string }) => classMap.set(c.id, c.name));
-        if (assignments) {
-          assignments.forEach((a: { classes: unknown }) => {
-            const cls = a.classes as { id: string; name: string };
-            if (cls && !classMap.has(cls.id)) classMap.set(cls.id, cls.name);
-          });
-        }
-        setClasses(Array.from(classMap, ([id, name]) => ({ id, name })));
-
-        await loadAssessments(teacher.id);
+      const [aRes, tRes] = await Promise.all([
+        fetch("/api/academics/assessments"),
+        fetch("/api/terms"),
+      ]);
+      const [aJson, tJson] = await Promise.all([aRes.json(), tRes.json()]);
+      if (aRes.ok) {
+        // Filter to assessments for the teacher's classes
+        const all = (aJson.data ?? []) as Assessment[];
+        setAssessments(all.filter((a) => a.class && classMap.has(a.class.id)));
       }
-    } catch (err) {
-      console.error("Load error:", err);
-      setError("Failed to load data");
+      if (tRes.ok) {
+        setTerms(tJson.data ?? []);
+        const current = (tJson.data ?? []).find((t: Term) => t.is_current);
+        if (current) setForm((prev) => ({ ...prev, term_id: current.id }));
+      }
+    } catch {
+      toast.error("Network error");
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function loadAssessments(tId: string) {
-    try {
-      const { data: assessmentsData } = await supabase
-        .from("assessments")
-        .select("*, classes!inner(name), subjects!inner(name)")
-        .eq("teacher_id", tId)
-        .order("date", { ascending: false });
+  useEffect(() => { void load(); }, [load]);
 
-      if (!assessmentsData) {
-        setAssessments([]);
-        return;
-      }
-
-      const enriched = await Promise.all(
-        assessmentsData.map(async (a) => {
-          const cls = a.classes as unknown as { name: string };
-          const subj = a.subjects as unknown as { name: string } | null;
-
-          const { count: scoresCount } = await supabase
-            .from("assessment_scores")
-            .select("*", { count: "exact", head: true })
-            .eq("assessment_id", a.id);
-
-          const { count: totalStudents } = await supabase
-            .from("students")
-            .select("*", { count: "exact", head: true })
-            .eq("class_id", a.class_id)
-            .eq("status", "active");
-
-          return {
-            id: a.id,
-            name: a.name,
-            type: a.type,
-            max_score: a.max_score,
-            ca_weight_pct: a.ca_weight_pct,
-            date: a.date,
-            subject_id: a.subject_id,
-            class_id: a.class_id,
-            subject_name: subj?.name || "All Subjects",
-            class_name: cls?.name || "Unknown",
-            scores_count: scoresCount || 0,
-            total_students: totalStudents || 0,
-          };
-        })
-      );
-
-      setAssessments(enriched);
-    } catch (err) {
-      console.error("Load assessments error:", err);
-    }
-  }
-
-  async function handleClassChange(classId: string) {
-    setCreateForm(prev => ({ ...prev, class_id: classId, subject_id: "" }));
-
-    if (teacherId) {
-      const { data: assignData } = await supabase
-        .from("teacher_subject_assignments")
-        .select("subject_id, subjects!inner(id, name)")
-        .eq("class_id", classId)
-        .eq("teacher_id", teacherId);
-
-      const subjectList = (assignData || []).map((a: { subjects: unknown }) => {
-        const subj = a.subjects as { id: string; name: string };
-        return subj;
-      });
-      setSubjects(subjectList);
-    }
-  }
-
-  async function handleCreateAssessment() {
-    if (!createForm.name || !createForm.class_id) {
-      toast.error("Assessment name and class are required");
+  const handleCreate = async () => {
+    if (!form.name.trim() || !form.class_id || !form.max_score) {
+      toast.error("Name, class, and max score are required");
       return;
     }
-
-    setCreating(true);
+    setSaving(true);
     try {
-      const { error } = await supabase.from("assessments").insert({
-        name: createForm.name,
-        type: createForm.type,
-        max_score: parseFloat(createForm.max_score) || 0,
-        ca_weight_pct: parseFloat(createForm.ca_weight_pct) || 0,
-        date: createForm.date || null,
-        class_id: createForm.class_id,
-        subject_id: createForm.subject_id || null,
-        teacher_id: teacherId,
+      const res = await fetch("/api/academics/assessments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          type: form.type,
+          class_id: form.class_id,
+          subject_id: form.subject_id || null,
+          term_id: form.term_id || null,
+          max_score: Number(form.max_score),
+          date: form.date || null,
+        }),
       });
-
-      if (error) throw error;
-
-      toast.success("Assessment created successfully");
-      setShowCreateForm(false);
-      setCreateForm({
-        name: "",
-        type: "quiz",
-        max_score: "100",
-        ca_weight_pct: "0",
-        date: new Date().toISOString().split("T")[0],
-        class_id: "",
-        subject_id: "",
-      });
-
-      if (teacherId) await loadAssessments(teacherId);
-    } catch (err) {
-      console.error("Create assessment error:", err);
-      toast.error("Failed to create assessment");
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || "Failed to create"); return; }
+      toast.success("Assessment created");
+      setShowCreate(false);
+      setForm({ ...form, name: "", date: new Date().toISOString().split("T")[0] });
+      void load();
+    } catch {
+      toast.error("Network error");
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
-  }
-
-  async function selectAssessment(assessmentId: string) {
-    setSelectedAssessmentId(assessmentId);
-    setExpandedStats(false);
-
-    const assessment = assessments.find(a => a.id === assessmentId);
-    if (!assessment) return;
-
-    try {
-      const { data: studentData } = await supabase
-        .from("students")
-        .select("id, first_name, last_name, admission_number")
-        .eq("class_id", assessment.class_id)
-        .eq("status", "active")
-        .order("first_name");
-
-      const { data: existingScores } = await supabase
-        .from("assessment_scores")
-        .select("id, student_id, score, remarks")
-        .eq("assessment_id", assessmentId);
-
-      const scoreMap = new Map<string, { id: string; score: number | null; remarks: string | null }>();
-      if (existingScores) {
-        existingScores.forEach((s: { id: string; student_id: string; score: number | null; remarks: string | null }) => {
-          scoreMap.set(s.student_id, { id: s.id, score: s.score, remarks: s.remarks });
-        });
-      }
-
-      const enrichedStudents: StudentScore[] = (studentData || []).map((s: { id: string; first_name: string; last_name: string; admission_number: string | null }) => {
-        const existing = scoreMap.get(s.id);
-        return {
-          student_id: s.id,
-          first_name: s.first_name,
-          last_name: s.last_name,
-          admission_number: s.admission_number,
-          score: existing?.score !== null && existing?.score !== undefined ? String(existing.score) : "",
-          existing_score_id: existing?.id,
-          existing_score: existing?.score ?? null,
-          remarks: existing?.remarks || "",
-        };
-      });
-
-      setStudents(enrichedStudents);
-    } catch (err) {
-      console.error("Load scores error:", err);
-      toast.error("Failed to load student scores");
-    }
-  }
-
-  function updateScore(studentId: string, value: string) {
-    setStudents(prev =>
-      prev.map(s => (s.student_id === studentId ? { ...s, score: value } : s))
-    );
-  }
-
-  function updateRemarks(studentId: string, value: string) {
-    setStudents(prev =>
-      prev.map(s => (s.student_id === studentId ? { ...s, remarks: value } : s))
-    );
-  }
-
-  const calcStats = () => {
-    const numericScores = students
-      .map(s => parseFloat(s.score))
-      .filter(s => !isNaN(s));
-
-    if (numericScores.length === 0) return null;
-
-    return {
-      average: (numericScores.reduce((a, b) => a + b, 0) / numericScores.length).toFixed(1),
-      highest: Math.max(...numericScores),
-      lowest: Math.min(...numericScores),
-      entered: numericScores.length,
-      total: students.length,
-    };
   };
 
-  async function handleSaveScores() {
-    if (!selectedAssessmentId) return;
+  const openScoreEntry = async (assessment: Assessment) => {
+    if (!assessment.class) return;
+    setScoreModal({ open: true, assessment });
+    try {
+      const [sRes, scoreRes] = await Promise.all([
+        fetch(`/api/students?class_id=${assessment.class.id}&status=active`),
+        fetch(`/api/academics/scores?assessment_id=${assessment.id}`),
+      ]);
+      const [sJson, scoreJson] = await Promise.all([sRes.json(), scoreRes.json()]);
+      setRoster(sJson.data ?? []);
+      const existing: Record<string, string> = {};
+      for (const s of (scoreJson.data ?? []) as Score[]) {
+        if (s.score !== null) existing[s.student_id] = String(s.score);
+      }
+      setScores(existing);
+    } catch {
+      toast.error("Failed to load roster");
+    }
+  };
 
+  const handleSaveScores = async () => {
+    if (!scoreModal.assessment) return;
     setSavingScores(true);
     try {
-      // Delete existing scores and re-insert
-      const { error: delError } = await supabase
-        .from("assessment_scores")
-        .delete()
-        .eq("assessment_id", selectedAssessmentId);
-      if (delError) throw delError;
-
-      const scores = students
-        .filter(s => s.score.trim() !== "")
-        .map(s => ({
-          assessment_id: selectedAssessmentId,
-          student_id: s.student_id,
-          score: parseFloat(s.score) || 0,
-          remarks: s.remarks || null,
-        }));
-
-      if (scores.length === 0) {
-        toast.info("No scores to save");
-        return;
-      }
-
-      const { error } = await supabase
-        .from("assessment_scores")
-        .insert(scores);
-      if (error) throw error;
-
-      toast.success(`Scores saved for ${scores.length} student(s)`);
-      if (teacherId) await loadAssessments(teacherId);
-    } catch (err) {
-      console.error("Save scores error:", err);
-      toast.error("Failed to save scores");
+      const scoresArray = Object.entries(scores)
+        .filter(([_, v]) => v !== "")
+        .map(([student_id, v]) => ({ student_id, score: Number(v) }));
+      const res = await fetch("/api/academics/scores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assessment_id: scoreModal.assessment.id, scores: scoresArray }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || "Failed to save"); return; }
+      toast.success(`Saved ${data.count ?? 0} scores`);
+      setScoreModal({ open: false, assessment: null });
+      void load();
+    } catch {
+      toast.error("Network error");
     } finally {
       setSavingScores(false);
     }
-  }
-
-  const typeColors: Record<string, "default" | "secondary" | "warning" | "info" | "success"> = {
-    quiz: "info",
-    test: "warning",
-    homework: "secondary",
-    project: "success",
-    exam: "default",
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto mb-4" />
-          <p className="text-sm text-muted-foreground">Loading assessments...</p>
-        </div>
-      </div>
-    );
+    return <div className="p-6 space-y-4"><div className="h-8 bg-gray-200 rounded w-48 animate-pulse" /><div className="h-64 bg-gray-100 rounded-xl animate-pulse" /></div>;
   }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center gap-4 py-8">
-            <AlertCircle className="h-12 w-12 text-destructive" />
-            <p className="text-destructive font-medium">{error}</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const stats = calcStats();
-
-  const selectedAssessment = assessments.find(a => a.id === selectedAssessmentId);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Assessments</h1>
-          <p className="text-sm text-muted-foreground">Create assessments and enter scores</p>
+          <p className="text-sm text-gray-500 mt-1">Create tests and enter student scores</p>
         </div>
-        <Button onClick={() => { setShowCreateForm(!showCreateForm); setSelectedAssessmentId(null); }}>
-          <Plus className="h-4 w-4 mr-2" />
-          {showCreateForm ? "Cancel" : "New Assessment"}
+        <Button onClick={() => setShowCreate(true)} disabled={classes.length === 0}>
+          <Plus className="h-4 w-4 mr-2" />New Assessment
         </Button>
       </div>
 
-      {/* Create assessment form */}
-      {showCreateForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Create New Assessment</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label>Assessment Name</Label>
-                <Input
-                  placeholder="e.g. End of Term Exam"
-                  value={createForm.name}
-                  onChange={e => setCreateForm(prev => ({ ...prev, name: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Type</Label>
-                <Select value={createForm.type} onValueChange={v => setCreateForm(prev => ({ ...prev, type: v }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="quiz">Quiz</SelectItem>
-                    <SelectItem value="test">Test</SelectItem>
-                    <SelectItem value="homework">Homework</SelectItem>
-                    <SelectItem value="project">Project</SelectItem>
-                    <SelectItem value="exam">Exam</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Max Score</Label>
-                <Input
-                  type="number"
-                  value={createForm.max_score}
-                  onChange={e => setCreateForm(prev => ({ ...prev, max_score: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>CA Weight (%)</Label>
-                <Input
-                  type="number"
-                  value={createForm.ca_weight_pct}
-                  onChange={e => setCreateForm(prev => ({ ...prev, ca_weight_pct: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Date</Label>
-                <Input
-                  type="date"
-                  value={createForm.date}
-                  onChange={e => setCreateForm(prev => ({ ...prev, date: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Class</Label>
-                <Select
-                  value={createForm.class_id}
-                  onValueChange={handleClassChange}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {classes.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Subject</Label>
-                <Select
-                  value={createForm.subject_id}
-                  onValueChange={v => setCreateForm(prev => ({ ...prev, subject_id: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All subjects" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">All Subjects</SelectItem>
-                    {subjects.map(s => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="mt-4">
-              <Button onClick={handleCreateAssessment} disabled={creating}>
-                {creating ? "Creating..." : "Create Assessment"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Assessment list */}
-      <div className="space-y-3">
-        {assessments.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-8">
-              <FileSpreadsheet className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-muted-foreground mb-4">No assessments yet</p>
-              <Button onClick={() => setShowCreateForm(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create your first assessment
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          assessments.map((assessment) => (
-            <Card
-              key={assessment.id}
-              className={`cursor-pointer transition-colors ${
-                selectedAssessmentId === assessment.id ? "ring-2 ring-primary" : ""
-              }`}
-              onClick={() => selectAssessment(assessment.id)}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-gray-900">{assessment.name}</h3>
-                      <Badge variant={typeColors[assessment.type as keyof typeof typeColors] || "secondary"}>
-                        {assessment.type}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">
-                        Max: {assessment.max_score}
-                      </Badge>
+      {assessments.length === 0 ? (
+        <Card><CardContent className="py-12 text-center"><FileSpreadsheet className="h-12 w-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500">No assessments yet.</p></CardContent></Card>
+      ) : (
+        <div className="space-y-2">
+          {assessments.map((a) => (
+            <Card key={a.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-medium">{a.name}</p>
+                      <Badge variant="secondary">{a.type ?? "—"}</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {assessment.class_name} • {assessment.subject_name}
-                      {assessment.date && ` • ${new Date(assessment.date).toLocaleDateString("en-GH")}`}
-                      {assessment.ca_weight_pct > 0 && ` • CA Weight: ${assessment.ca_weight_pct}%`}
+                    <p className="text-xs text-gray-500">
+                      {a.class?.name ?? "—"}{a.subject ? ` · ${a.subject.name}` : ""} · Max {a.max_score}
+                      {a.date ? ` · ${formatDate(a.date)}` : ""}
                     </p>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-medium">
-                      <span className={
-                        assessment.scores_count === assessment.total_students
-                          ? "text-green-600"
-                          : "text-amber-600"
-                      }>
-                        {assessment.scores_count}/{assessment.total_students}
-                      </span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">Scores entered</p>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">{a.assessment_scores?.[0]?.count ?? 0} scores</p>
+                    <Button variant="ghost" size="sm" onClick={() => openScoreEntry(a)}>
+                      Enter Scores <ChevronRight className="h-3 w-3 ml-1" />
+                    </Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Score entry grid */}
-      {selectedAssessment && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center justify-between">
-              <span>Score Entry: {selectedAssessment.name}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setExpandedStats(!expandedStats)}
-                className="flex items-center gap-1"
-              >
-                <BarChart3 className="h-4 w-4" />
-                Stats
-                {expandedStats ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              </Button>
-            </CardTitle>
-            <CardDescription>
-              {selectedAssessment.class_name} — Max Score: {selectedAssessment.max_score}
-            </CardDescription>
-          </CardHeader>
-
-          {/* Stats expandable */}
-          {expandedStats && stats && (
-            <CardContent className="pt-0">
-              <div className="grid grid-cols-4 gap-3 mb-4">
-                <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <p className="text-lg font-bold text-blue-600">{stats.average}</p>
-                  <p className="text-xs text-blue-500">Average</p>
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>New Assessment</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => setShowCreate(false)}><X className="h-4 w-4" /></Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2"><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Midterm Exam" /></div>
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="quiz">Quiz</SelectItem>
+                    <SelectItem value="test">Test</SelectItem>
+                    <SelectItem value="exam">Exam</SelectItem>
+                    <SelectItem value="homework">Homework</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Class</Label>
+                <Select value={form.class_id} onValueChange={(v) => setForm({ ...form, class_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select class" /></SelectTrigger>
+                  <SelectContent>{classes.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}</SelectContent>
+                </Select>
+              </div>
+              {subjects.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Subject</Label>
+                  <Select value={form.subject_id || "none"} onValueChange={(v) => setForm({ ...form, subject_id: v === "none" ? "" : v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No subject</SelectItem>
+                      {subjects.map((s) => (<SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <p className="text-lg font-bold text-green-600">{stats.highest}</p>
-                  <p className="text-xs text-green-500">Highest</p>
-                </div>
-                <div className="text-center p-3 bg-red-50 rounded-lg">
-                  <p className="text-lg font-bold text-red-600">{stats.lowest}</p>
-                  <p className="text-xs text-red-500">Lowest</p>
-                </div>
-                <div className="text-center p-3 bg-purple-50 rounded-lg">
-                  <p className="text-lg font-bold text-purple-600">{stats.entered}/{stats.total}</p>
-                  <p className="text-xs text-purple-500">Entered</p>
-                </div>
+              )}
+              <div className="space-y-2">
+                <Label>Term</Label>
+                <Select value={form.term_id} onValueChange={(v) => setForm({ ...form, term_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select term" /></SelectTrigger>
+                  <SelectContent>{terms.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}</SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2"><Label>Max Score</Label><Input type="number" value={form.max_score} onChange={(e) => setForm({ ...form, max_score: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Date</Label><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
               </div>
             </CardContent>
-          )}
-
-          <CardContent className="p-0">
-            {students.length === 0 ? (
-              <div className="text-center py-8 px-6">
-                <p className="text-muted-foreground">No students in this class</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-gray-50">
-                      <th className="text-left p-3 text-xs font-medium text-muted-foreground">#</th>
-                      <th className="text-left p-3 text-xs font-medium text-muted-foreground">Student</th>
-                      <th className="text-left p-3 text-xs font-medium text-muted-foreground">ID</th>
-                      <th className="p-3 text-xs font-medium text-muted-foreground w-24">Score</th>
-                      <th className="p-3 text-xs font-medium text-muted-foreground w-40">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {students.map((s, idx) => (
-                      <tr key={s.student_id} className="hover:bg-gray-50">
-                        <td className="p-3 text-sm text-muted-foreground">{idx + 1}</td>
-                        <td className="p-3 text-sm font-medium text-gray-900">
-                          {s.first_name} {s.last_name}
-                        </td>
-                        <td className="p-3 text-sm text-muted-foreground">
-                          {s.admission_number || "—"}
-                        </td>
-                        <td className="p-3">
-                          <Input
-                            type="number"
-                            placeholder="Score"
-                            value={s.score}
-                            onChange={e => updateScore(s.student_id, e.target.value)}
-                            className="h-8 text-sm w-20"
-                            min={0}
-                            max={selectedAssessment.max_score}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <Input
-                            placeholder="Remarks"
-                            value={s.remarks}
-                            onChange={e => updateRemarks(s.student_id, e.target.value)}
-                            className="h-8 text-sm"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-
-          {students.length > 0 && (
-            <CardFooter className="flex justify-end gap-3 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => { setSelectedAssessmentId(null); setStudents([]); }}
-                className="flex items-center gap-1"
-              >
-                <X className="h-4 w-4" />
-                Close
-              </Button>
-              <Button onClick={handleSaveScores} disabled={savingScores} className="flex items-center gap-1">
-                {savingScores ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4" />
-                    Save Scores
-                  </>
-                )}
-              </Button>
+            <CardFooter className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowCreate(false)} disabled={saving}>Cancel</Button>
+              <Button onClick={handleCreate} disabled={saving}>{saving ? "Creating..." : "Create"}</Button>
             </CardFooter>
-          )}
-        </Card>
+          </Card>
+        </div>
+      )}
+
+      {scoreModal.open && scoreModal.assessment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Enter Scores · {scoreModal.assessment.name}</CardTitle>
+                  <CardDescription>Max score: {scoreModal.assessment.max_score}</CardDescription>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setScoreModal({ open: false, assessment: null })}><X className="h-4 w-4" /></Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {roster.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-8">No students in this class.</p>
+                ) : roster.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 border-b pb-2">
+                    <p className="text-sm">{s.first_name} {s.last_name}</p>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min="0"
+                        max={scoreModal.assessment?.max_score}
+                        value={scores[s.id] ?? ""}
+                        onChange={(e) => setScores({ ...scores, [s.id]: e.target.value })}
+                        className="w-24"
+                      />
+                      <span className="text-xs text-gray-500">/ {scoreModal.assessment?.max_score}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setScoreModal({ open: false, assessment: null })} disabled={savingScores}>Cancel</Button>
+              <Button onClick={handleSaveScores} disabled={savingScores || roster.length === 0}>{savingScores ? "Saving..." : "Save Scores"}</Button>
+            </CardFooter>
+          </Card>
+        </div>
       )}
     </div>
   );
