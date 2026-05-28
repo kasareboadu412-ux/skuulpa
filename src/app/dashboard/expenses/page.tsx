@@ -1,20 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/lib/supabase";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
-import {
-  Wallet,
-  TrendingUp,
-  TrendingDown,
-  Plus,
-  Search,
-} from "lucide-react";
+import { Wallet, TrendingUp, TrendingDown, Plus } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -39,54 +32,89 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+interface Expense {
+  id: string;
+  category: string;
+  amount: number;
+  description: string | null;
+  date: string;
+}
+
+interface CategorySummary {
+  category: string;
+  count: number;
+  total: number;
+}
+
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [summary, setSummary] = useState<{ total_expenses: number; total_entries: number; by_category: CategorySummary[] }>({ total_expenses: 0, total_entries: 0, by_category: [] });
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    category: "",
+    category: "supplies",
     amount: "",
     description: "",
     date: new Date().toISOString().split("T")[0],
   });
 
-  useEffect(() => {
-    loadExpenses();
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/expenses?limit=200");
+      const data = await res.json();
+      if (res.ok) {
+        setExpenses(data.data ?? []);
+        setSummary(data.summary ?? { total_expenses: 0, total_entries: 0, by_category: [] });
+      } else {
+        toast.error(data.error || "Failed to load expenses");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const loadExpenses = async () => {
-    const { data, error } = await supabase
-      .from("expenses")
-      .select("*")
-      .order("date", { ascending: false });
-
-    if (error) {
-      toast.error("Failed to load expenses");
-    } else {
-      setExpenses(data || []);
-    }
-    setLoading(false);
-  };
+  useEffect(() => { void load(); }, [load]);
 
   const handleAdd = async () => {
-    const { error } = await supabase.from("expenses").insert({
-      category: form.category,
-      amount: parseFloat(form.amount),
-      description: form.description,
-      date: form.date,
-    });
-
-    if (error) {
-      toast.error("Failed to add expense");
-    } else {
+    const amt = parseFloat(form.amount);
+    if (!form.category || !amt || amt <= 0) {
+      toast.error("Category and a positive amount are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: form.category,
+          amount: amt,
+          description: form.description.trim() || null,
+          date: form.date,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to record expense");
+        return;
+      }
       toast.success("Expense recorded");
       setShowAdd(false);
-      setForm({ category: "", amount: "", description: "", date: new Date().toISOString().split("T")[0] });
-      loadExpenses();
+      setForm({ category: "supplies", amount: "", description: "", date: new Date().toISOString().split("T")[0] });
+      void load();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const highestCategory = summary.by_category.length > 0
+    ? [...summary.by_category].sort((a, b) => b.total - a.total)[0]
+    : null;
 
   if (loading) {
     return (
@@ -102,31 +130,19 @@ export default function ExpensesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Expenses</h1>
-          <p className="text-gray-500 mt-1">
-            Track school operating expenses
-          </p>
+          <p className="text-gray-500 mt-1">Track school operating expenses</p>
         </div>
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Record Expense
-            </Button>
+            <Button><Plus className="w-4 h-4 mr-2" />Record Expense</Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Record Expense</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Record Expense</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select
-                  value={form.category}
-                  onValueChange={(v) => setForm({ ...form, category: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
+                <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="salary">Salary</SelectItem>
                     <SelectItem value="supplies">Supplies</SelectItem>
@@ -139,34 +155,20 @@ export default function ExpensesPage() {
               </div>
               <div className="space-y-2">
                 <Label>Amount (GH₵)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                />
+                <Input type="number" step="0.01" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Input
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                />
+                <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label>Date</Label>
-                <Input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                />
+                <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAdd(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAdd}>Save</Button>
+              <Button variant="outline" onClick={() => setShowAdd(false)} disabled={saving}>Cancel</Button>
+              <Button onClick={handleAdd} disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -174,56 +176,24 @@ export default function ExpensesPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <Wallet className="w-4 h-4" />
-              Total Expenses
-            </CardTitle>
-          </CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2"><Wallet className="w-4 h-4" />Total Expenses</CardTitle></CardHeader>
+          <CardContent><p className="text-3xl font-bold">{formatCurrency(summary.total_expenses)}</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-red-500" />Highest Category</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{formatCurrency(totalExpenses)}</p>
+            <p className="text-3xl font-bold capitalize">{highestCategory?.category ?? "—"}</p>
+            {highestCategory && <p className="text-sm text-gray-500 mt-1">{formatCurrency(highestCategory.total)}</p>}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-red-500" />
-              Highest Category
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {expenses.length > 0
-                ? (Object.entries(
-                    expenses.reduce(
-                      (acc: Record<string, number>, e: { category: string; amount: number }) => ({
-                        ...acc,
-                        [e.category]: (acc[e.category] || 0) + e.amount,
-                      }),
-                      {} as Record<string, number>
-                    )
-                  ) as [string, number][]).sort(([, a], [, b]) => b - a)?.[0]?.[0]
-                : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-green-500" />
-              Expense Count
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{expenses.length}</p>
-          </CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2"><TrendingDown className="w-4 h-4 text-green-500" />Entries</CardTitle></CardHeader>
+          <CardContent><p className="text-3xl font-bold">{summary.total_entries}</p></CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Expense History</CardTitle>
-        </CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="text-lg">Expense History</CardTitle></CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -236,22 +206,14 @@ export default function ExpensesPage() {
             </TableHeader>
             <TableBody>
               {expenses.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-gray-500">
-                    No expenses recorded yet
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={4} className="text-center py-8 text-gray-500">No expenses recorded yet</TableCell></TableRow>
               ) : (
-                expenses.map((expense) => (
-                  <TableRow key={expense.id}>
-                    <TableCell>{formatDate(expense.date)}</TableCell>
-                    <TableCell>
-                      <span className="capitalize">{expense.category}</span>
-                    </TableCell>
-                    <TableCell>{expense.description || "—"}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(expense.amount)}
-                    </TableCell>
+                expenses.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell>{formatDate(e.date)}</TableCell>
+                    <TableCell><span className="capitalize">{e.category}</span></TableCell>
+                    <TableCell>{e.description ?? "—"}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(Number(e.amount))}</TableCell>
                   </TableRow>
                 ))
               )}
