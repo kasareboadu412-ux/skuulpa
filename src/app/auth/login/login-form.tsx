@@ -241,9 +241,9 @@ export default function LoginForm() {
                 )}
               </Button>
               {mode === "staff" && (
-                <Link href="/auth/forgot-password" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                  Forgot your password?
-                </Link>
+                <p className="text-xs text-muted-foreground">
+                  Forgot your password? Contact your school administrator.
+                </p>
               )}
             </CardFooter>
           </form>

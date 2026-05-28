@@ -80,6 +80,13 @@ interface PaymentRow {
   student?: StudentRow | null;
 }
 
+interface TermRow {
+  id: string;
+  name: string;
+  is_current: boolean | null;
+  academic_year?: { id: string; name: string } | null;
+}
+
 // ─── Badges ───
 
 function FeeStatusBadge({ status }: { status: string }) {
@@ -481,13 +488,164 @@ function PaymentDialog({
   );
 }
 
+// ─── Assign Panel ───
+
+function AssignPanel({
+  structures,
+  classes,
+  terms,
+  onAssigned,
+}: {
+  structures: FeeStructure[];
+  classes: ClassRow[];
+  terms: TermRow[];
+  onAssigned: () => void;
+}) {
+  const [feeId, setFeeId] = useState<string>("");
+  const [classId, setClassId] = useState<string>("");
+  const [termId, setTermId] = useState<string>("");
+  const [applyDiscount, setApplyDiscount] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!termId) {
+      const current = terms.find((t) => t.is_current);
+      if (current) setTermId(current.id);
+    }
+  }, [terms, termId]);
+
+  const selectedFee = structures.find((s) => s.id === feeId);
+  const selectedClass = classes.find((c) => c.id === classId);
+  const eligibleStructures = classId
+    ? structures.filter((s) => s.class_id === null || s.class_id === classId)
+    : structures;
+
+  const handleSubmit = async () => {
+    if (!feeId || !classId || !termId) {
+      toast.error("Pick a fee structure, class, and term");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/fees/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bulk: true,
+          fee_structure_id: feeId,
+          class_id: classId,
+          term_id: termId,
+          apply_sibling_discount: applyDiscount,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to assign fees");
+        return;
+      }
+      toast.success(`Assigned to ${data.count ?? 0} student(s)`);
+      onAssigned();
+    } catch {
+      toast.error("Network error. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Assign Fee to a Class</CardTitle>
+        <CardDescription>
+          Charge a fee structure to every active student in a class for the selected term.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="assign-class">Class</Label>
+            <Select value={classId} onValueChange={setClassId}>
+              <SelectTrigger id="assign-class"><SelectValue placeholder="Select a class" /></SelectTrigger>
+              <SelectContent>
+                {classes.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="assign-term">Term</Label>
+            <Select value={termId} onValueChange={setTermId}>
+              <SelectTrigger id="assign-term"><SelectValue placeholder="Select a term" /></SelectTrigger>
+              <SelectContent>
+                {terms.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}{t.academic_year?.name ? ` · ${t.academic_year.name}` : ""}{t.is_current ? " (current)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="assign-fee">Fee Structure</Label>
+          <Select value={feeId} onValueChange={setFeeId}>
+            <SelectTrigger id="assign-fee"><SelectValue placeholder="Select a fee structure" /></SelectTrigger>
+            <SelectContent>
+              {eligibleStructures.length === 0 ? (
+                <div className="px-2 py-1.5 text-sm text-gray-500">No matching fee structures.</div>
+              ) : eligibleStructures.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name} · {formatCurrency(Number(s.amount))} · {s.frequency}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {classId && (
+            <p className="text-xs text-gray-500">
+              Showing fees applicable to {selectedClass?.name} or all classes.
+            </p>
+          )}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={applyDiscount}
+            onChange={(e) => setApplyDiscount(e.target.checked)}
+            className="h-4 w-4"
+          />
+          Apply sibling discount (10% per sibling, capped at 50%)
+        </label>
+
+        {selectedFee && selectedClass && (
+          <div className="rounded-lg border bg-gray-50 p-3 text-sm">
+            <p>
+              About to charge <span className="font-semibold">{formatCurrency(Number(selectedFee.amount))}</span>
+              {" "}({selectedFee.frequency}) to every active student in{" "}
+              <span className="font-semibold">{selectedClass.name}</span>.
+            </p>
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="flex justify-end">
+        <Button onClick={handleSubmit} disabled={submitting || !feeId || !classId || !termId}>
+          {submitting ? "Assigning..." : "Assign Fee"}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
 // ─── Main page ───
 
 export default function FeesPage() {
-  const [activeTab, setActiveTab] = useState<"structures" | "assignments" | "ledger">("structures");
+  const [activeTab, setActiveTab] = useState<"structures" | "assign" | "assignments" | "ledger">("structures");
   const [loading, setLoading] = useState(true);
   const [structures, setStructures] = useState<FeeStructure[]>([]);
   const [classes, setClasses] = useState<ClassRow[]>([]);
+  const [terms, setTerms] = useState<TermRow[]>([]);
   const [assignments, setAssignments] = useState<FeeAssignmentRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
 
@@ -501,15 +659,19 @@ export default function FeesPage() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, cRes, aRes, pRes] = await Promise.all([
+      const [sRes, cRes, tRes, aRes, pRes] = await Promise.all([
         fetch("/api/fees/structures"),
         fetch("/api/classes"),
+        fetch("/api/terms"),
         fetch("/api/fees/assignments"),
         fetch("/api/fees/payments?limit=100"),
       ]);
-      const [sData, cData, aData, pData] = await Promise.all([sRes.json(), cRes.json(), aRes.json(), pRes.json()]);
+      const [sData, cData, tData, aData, pData] = await Promise.all([
+        sRes.json(), cRes.json(), tRes.json(), aRes.json(), pRes.json(),
+      ]);
       if (sRes.ok) setStructures(sData.data ?? []);
       if (cRes.ok) setClasses((cData.data ?? []).map((c: ClassRow) => ({ id: c.id, name: c.name })));
+      if (tRes.ok) setTerms(tData.data ?? []);
       if (aRes.ok) setAssignments(aData.data ?? []);
       if (pRes.ok) setPayments(pData.data ?? []);
     } catch {
@@ -642,6 +804,7 @@ export default function FeesPage() {
       <div className="flex gap-1 rounded-lg bg-gray-100 p-1 w-fit">
         {[
           { key: "structures", label: "Fee Structures" },
+          { key: "assign", label: "Assign" },
           { key: "assignments", label: "Student Fees" },
           { key: "ledger", label: "Payment Ledger" },
         ].map((tab) => (
@@ -710,6 +873,15 @@ export default function FeesPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === "assign" && (
+        <AssignPanel
+          structures={structures.filter((s) => s.is_active)}
+          classes={classes}
+          terms={terms}
+          onAssigned={() => { void loadAll(); }}
+        />
       )}
 
       {activeTab === "assignments" && (

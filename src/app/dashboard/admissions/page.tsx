@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,9 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  Link as LinkIcon,
+  Copy,
+  Check,
 } from "lucide-react";
 
 interface Application {
@@ -41,6 +44,39 @@ export default function AdmissionsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [shortCode, setShortCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/schools/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.data?.short_code) setShortCode(data.data.short_code);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  const admissionUrl =
+    typeof window !== "undefined" && shortCode
+      ? `${window.location.origin}/admission?school=${encodeURIComponent(shortCode)}`
+      : null;
+
+  const handleCopy = async () => {
+    if (!admissionUrl) return;
+    try {
+      await navigator.clipboard.writeText(admissionUrl);
+      setCopied(true);
+      toast.success("Admission link copied");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy. Select and copy manually.");
+    }
+  };
 
   const loadApplications = useCallback(async () => {
     setLoading(true);
@@ -113,6 +149,29 @@ export default function AdmissionsPage() {
           <p className="text-gray-500 mt-1">Manage incoming student applications</p>
         </div>
       </div>
+
+      {admissionUrl && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <LinkIcon className="h-4 w-4 text-blue-600" />
+              Public admission link
+            </CardTitle>
+            <CardDescription>
+              Share this link with parents — they can apply directly without an account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input value={admissionUrl} readOnly className="font-mono text-xs" />
+              <Button variant="outline" onClick={handleCopy} className="gap-1">
+                {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex gap-4 items-center flex-wrap">
         <div className="relative flex-1 max-w-md">

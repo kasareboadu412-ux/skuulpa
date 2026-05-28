@@ -79,16 +79,19 @@ function PlanModal({
     if (!name.trim() || !rate || rate <= 0) { toast.error("Name and daily rate are required"); return; }
     setSaving(true);
     try {
-      const res = await fetch("/api/feeding/plans", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || null,
-          daily_rate: rate,
-          is_active: true,
-        }),
-      });
+      const res = await fetch(
+        editPlan ? `/api/feeding/plans/${editPlan.id}` : "/api/feeding/plans",
+        {
+          method: editPlan ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            description: description.trim() || null,
+            daily_rate: rate,
+            is_active: true,
+          }),
+        }
+      );
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "Failed to save plan"); return; }
       toast.success(editPlan ? "Plan updated" : "Plan created");

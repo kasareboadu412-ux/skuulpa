@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
@@ -17,14 +17,15 @@ import {
   Bell,
   ChevronDown,
   LogOut,
-  User,
   Menu,
   X,
   School,
+  UserPlus,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@radix-ui/react-avatar";
+import { Avatar, AvatarFallback } from "@radix-ui/react-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,11 +34,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@radix-ui/react-dropdown-menu";
+import { toast } from "sonner";
 
 const navigation = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Fees", href: "/dashboard/fees", icon: CreditCard },
+  { name: "Admissions", href: "/dashboard/admissions", icon: UserPlus },
   { name: "Students", href: "/dashboard/students", icon: Users },
+  { name: "Fees", href: "/dashboard/fees", icon: CreditCard },
+  { name: "Expenses", href: "/dashboard/expenses", icon: Wallet },
   { name: "Bus", href: "/dashboard/bus", icon: Bus },
   { name: "Feeding", href: "/dashboard/feeding", icon: UtensilsCrossed },
   { name: "Academics", href: "/dashboard/academics", icon: BookOpen },
@@ -47,24 +51,86 @@ const navigation = [
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
+interface ProfileInfo {
+  schoolName: string;
+  userName: string;
+  initials: string;
+}
+
+function deriveInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("")
+    .slice(0, 2) || "US";
+}
+
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [schoolName, setSchoolName] = useState("Skooly Academy");
+  const [profile, setProfile] = useState<ProfileInfo>({
+    schoolName: "Skooly",
+    userName: "Administrator",
+    initials: "AD",
+  });
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    // Attempt to load school info from localStorage or a quick API call
-    try {
-      const stored = localStorage.getItem("skooly-school-name");
-      if (stored) setSchoolName(stored);
-    } catch {
-      // localStorage not available
-    }
+    (async () => {
+      try {
+        const [schoolRes, teacherRes] = await Promise.all([
+          fetch("/api/schools/me"),
+          fetch("/api/teachers/me"),
+        ]);
+        const updates: Partial<ProfileInfo> = {};
+        if (schoolRes.ok) {
+          const data = await schoolRes.json();
+          if (data.data?.name) updates.schoolName = data.data.name;
+        }
+        if (teacherRes.ok) {
+          const data = await teacherRes.json();
+          const t = data.data?.teacher;
+          if (t) {
+            const name = `${t.first_name ?? ""} ${t.last_name ?? ""}`.trim();
+            if (name) {
+              updates.userName = name;
+              updates.initials = deriveInitials(name);
+            }
+          }
+        }
+        if (Object.keys(updates).length > 0) {
+          setProfile((prev) => ({ ...prev, ...updates }));
+        }
+      } catch {
+        // Defaults are fine
+      }
+    })();
   }, []);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to log out");
+        setLoggingOut(false);
+        return;
+      }
+      router.push("/auth/login");
+      router.refresh();
+    } catch {
+      toast.error("Network error");
+      setLoggingOut(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -86,7 +152,9 @@ export default function DashboardLayout({
         {/* Logo area */}
         <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-6">
           <School className="h-7 w-7 text-blue-600" />
-          <span className="text-lg font-bold text-gray-900">{schoolName}</span>
+          <span className="text-lg font-bold text-gray-900 truncate">
+            {profile.schoolName}
+          </span>
         </div>
 
         {/* Navigation */}
@@ -140,11 +208,8 @@ export default function DashboardLayout({
 
           <div className="flex-1" />
 
-          <Button variant="ghost" size="icon" className="relative">
+          <Button variant="ghost" size="icon" className="relative" title="Notifications">
             <Bell className="h-5 w-5 text-gray-600" />
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-              3
-            </span>
           </Button>
 
           <DropdownMenu>
@@ -155,11 +220,11 @@ export default function DashboardLayout({
               >
                 <Avatar className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
                   <AvatarFallback className="text-xs font-medium text-blue-700">
-                    KA
+                    {profile.initials}
                   </AvatarFallback>
                 </Avatar>
                 <span className="hidden sm:inline text-sm font-medium text-gray-700">
-                  Kwadwo Asare
+                  {profile.userName}
                 </span>
                 <ChevronDown className="h-4 w-4 text-gray-500" />
               </Button>
@@ -172,18 +237,24 @@ export default function DashboardLayout({
                 My Account
               </DropdownMenuLabel>
               <DropdownMenuSeparator className="my-1 h-px bg-gray-200" />
-              <DropdownMenuItem className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded cursor-pointer">
-                <User className="h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded cursor-pointer">
+              <DropdownMenuItem
+                className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded cursor-pointer outline-none"
+                onSelect={() => router.push("/dashboard/settings")}
+              >
                 <Settings className="h-4 w-4" />
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator className="my-1 h-px bg-gray-200" />
-              <DropdownMenuItem className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded cursor-pointer">
+              <DropdownMenuItem
+                className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded cursor-pointer outline-none"
+                disabled={loggingOut}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  void handleLogout();
+                }}
+              >
                 <LogOut className="h-4 w-4" />
-                Sign out
+                {loggingOut ? "Signing out..." : "Sign out"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

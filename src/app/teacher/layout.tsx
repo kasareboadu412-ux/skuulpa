@@ -214,9 +214,15 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
           {/* Sidebar footer */}
           <div className="px-3 py-4 border-t border-gray-200">
             <button
-              onClick={() => {
-                supabase.auth.signOut();
+              onClick={async () => {
+                try {
+                  await fetch("/api/auth/logout", { method: "POST" });
+                } catch {
+                  // server-side cookie clear failed; still proceed
+                }
+                await supabase.auth.signOut();
                 router.push("/auth/login");
+                router.refresh();
               }}
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 w-full"
             >

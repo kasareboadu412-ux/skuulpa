@@ -364,14 +364,32 @@ export default function MorePage() {
             out to our support team.
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="gap-1 text-xs">
-              <MessageCircle className="h-3 w-3" />
-              WhatsApp Support
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1 text-xs">
-              <Mail className="h-3 w-3" />
-              Email Support
-            </Button>
+            {school?.phone && (
+              <a
+                href={`https://wa.me/${school.phone.replace(/[^0-9]/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1"
+              >
+                <Button variant="outline" size="sm" className="gap-1 text-xs w-full">
+                  <MessageCircle className="h-3 w-3" />
+                  WhatsApp Support
+                </Button>
+              </a>
+            )}
+            {school?.email && (
+              <a href={`mailto:${school.email}`} className="flex-1">
+                <Button variant="outline" size="sm" className="gap-1 text-xs w-full">
+                  <Mail className="h-3 w-3" />
+                  Email Support
+                </Button>
+              </a>
+            )}
+            {!school?.phone && !school?.email && (
+              <p className="text-xs text-muted-foreground">
+                School contact details not configured yet.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

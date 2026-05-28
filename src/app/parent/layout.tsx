@@ -159,7 +159,15 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => router.push("/auth/login")}
+              onClick={async () => {
+                try {
+                  await fetch("/api/auth/logout", { method: "POST" });
+                } catch {
+                  // proceed anyway
+                }
+                router.push("/auth/login");
+                router.refresh();
+              }}
             >
               <LogOut className="h-4 w-4" />
             </Button>

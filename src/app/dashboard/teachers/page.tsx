@@ -46,6 +46,7 @@ export default function TeachersPage() {
   const [search, setSearch] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [credentialInfo, setCredentialInfo] = useState<{ email: string; password: string } | null>(null);
   const [addForm, setAddForm] = useState({
     first_name: "",
     last_name: "",
@@ -95,6 +96,9 @@ export default function TeachersPage() {
       }
       toast.success("Teacher added");
       setShowAddDialog(false);
+      if (data.temp_password && addForm.email) {
+        setCredentialInfo({ email: addForm.email.trim().toLowerCase(), password: data.temp_password });
+      }
       setAddForm({ first_name: "", last_name: "", phone: "", email: "", employee_id: "" });
       void loadTeachers();
     } catch {
@@ -156,6 +160,9 @@ export default function TeachersPage() {
               <div className="space-y-2">
                 <Label>Email</Label>
                 <Input type="email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} />
+                <p className="text-xs text-gray-500">
+                  If provided, a login account is created. You&apos;ll see a temporary password to share with the teacher.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Employee ID</Label>
@@ -165,6 +172,42 @@ export default function TeachersPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddDialog(false)} disabled={saving}>Cancel</Button>
               <Button onClick={handleAdd} disabled={saving}>{saving ? "Adding..." : "Add Teacher"}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!credentialInfo} onOpenChange={(o) => !o && setCredentialInfo(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Teacher login credentials</DialogTitle>
+              <DialogDescription>
+                Share these credentials with the teacher. They can change the password after signing in.
+                This is the only time the password will be shown.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs text-gray-500">Email</Label>
+                <Input value={credentialInfo?.email ?? ""} readOnly />
+              </div>
+              <div>
+                <Label className="text-xs text-gray-500">Temporary password</Label>
+                <Input value={credentialInfo?.password ?? ""} readOnly className="font-mono" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  if (!credentialInfo) return;
+                  void navigator.clipboard
+                    .writeText(`Email: ${credentialInfo.email}\nPassword: ${credentialInfo.password}`)
+                    .then(() => toast.success("Credentials copied"))
+                    .catch(() => toast.error("Couldn't copy. Select and copy manually."));
+                }}
+              >
+                Copy
+              </Button>
+              <Button variant="outline" onClick={() => setCredentialInfo(null)}>Done</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

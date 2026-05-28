@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import {
   Card,
   CardContent,
@@ -119,8 +119,10 @@ function SubStatusBadge({ status }: { status: string }) {
   return <Badge variant={s.variant}>{s.label}</Badge>;
 }
 
+const ALL_VALUE = "__all__";
+
 const statusOptions = [
-  { value: "", label: "All Statuses" },
+  { value: ALL_VALUE, label: "All Statuses" },
   { value: "active", label: "Active" },
   { value: "pending_approval", label: "Pending" },
   { value: "suspended", label: "Suspended" },
@@ -128,7 +130,7 @@ const statusOptions = [
 ];
 
 const planOptions = [
-  { value: "", label: "All Plans" },
+  { value: ALL_VALUE, label: "All Plans" },
   { value: "free", label: "Free" },
   { value: "basic", label: "Basic" },
   { value: "premium", label: "Premium" },
@@ -334,8 +336,8 @@ export default function SuperAdminSchools() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [planFilter, setPlanFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(ALL_VALUE);
+  const [planFilter, setPlanFilter] = useState(ALL_VALUE);
   const [expandedSchool, setExpandedSchool] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
@@ -351,8 +353,8 @@ export default function SuperAdminSchools() {
     try {
       const params = new URLSearchParams();
       if (debouncedSearch) params.set("search", debouncedSearch);
-      if (statusFilter) params.set("status", statusFilter);
-      if (planFilter) params.set("plan", planFilter);
+      if (statusFilter && statusFilter !== ALL_VALUE) params.set("status", statusFilter);
+      if (planFilter && planFilter !== ALL_VALUE) params.set("plan", planFilter);
       params.set("page", String(pagination.page));
 
       const res = await fetch(`/api/super-admin/schools?${params}`);
@@ -517,9 +519,8 @@ export default function SuperAdminSchools() {
                   </TableHeader>
                   <TableBody>
                     {schools.map((school) => (
-                      <>
+                      <Fragment key={school.id}>
                         <TableRow
-                          key={school.id}
                           className="cursor-pointer"
                           onClick={() =>
                             setExpandedSchool(
@@ -645,13 +646,13 @@ export default function SuperAdminSchools() {
                           </TableCell>
                         </TableRow>
                         {expandedSchool === school.id && (
-                          <TableRow key={`${school.id}-detail`}>
+                          <TableRow>
                             <TableCell colSpan={7} className="p-4">
                               <SchoolDetailRow school={school} />
                             </TableCell>
                           </TableRow>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>

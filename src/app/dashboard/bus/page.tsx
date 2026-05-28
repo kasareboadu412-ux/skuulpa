@@ -109,18 +109,20 @@ function RouteModal({
     }
     setSaving(true);
     try {
-      // Note: API has no PATCH for routes — create only for now
-      const res = await fetch("/api/bus/routes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), zones, is_active: true }),
-      });
+      const res = await fetch(
+        editRoute ? `/api/bus/routes/${editRoute.id}` : "/api/bus/routes",
+        {
+          method: editRoute ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim(), zones, is_active: true }),
+        }
+      );
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "Failed to save route");
         return;
       }
-      toast.success("Route created");
+      toast.success(editRoute ? "Route updated" : "Route created");
       onSaved();
       onClose();
     } catch {

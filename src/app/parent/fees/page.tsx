@@ -26,11 +26,23 @@ import {
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 
+interface SchoolMini {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+}
+
+interface ClassMini {
+  name: string;
+  school?: SchoolMini | SchoolMini[] | null;
+}
+
 interface Student {
   id: string;
   first_name: string;
   last_name: string;
-  class: { name: string } | { name: string }[] | null;
+  class: ClassMini | ClassMini[] | null;
 }
 
 interface FeeAssignment {
@@ -85,6 +97,15 @@ export default function FeesPage() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [showQr, setShowQr] = useState<string | null>(null);
+  const [showPayInfo, setShowPayInfo] = useState(false);
+
+  function getSchool(student: Student | undefined): SchoolMini | null {
+    if (!student?.class) return null;
+    const cls = Array.isArray(student.class) ? student.class[0] : student.class;
+    if (!cls?.school) return null;
+    const sch = Array.isArray(cls.school) ? cls.school[0] : cls.school;
+    return sch ?? null;
+  }
 
   useEffect(() => {
     async function init() {
@@ -228,7 +249,11 @@ export default function FeesPage() {
             </div>
 
             {summary.balance > 0 && (
-              <Button className="w-full mt-2 gap-2" size="lg">
+              <Button
+                className="w-full mt-2 gap-2"
+                size="lg"
+                onClick={() => setShowPayInfo(true)}
+              >
                 <Smartphone className="h-5 w-5" />
                 Pay Now with MoMo
               </Button>
@@ -366,13 +391,88 @@ export default function FeesPage() {
         </CardContent>
       </Card>
 
-      {/* Download All Statement */}
-      {payments.length > 0 && (
-        <Button variant="outline" className="w-full gap-2">
-          <Download className="h-4 w-4" />
-          Download Full Statement
-        </Button>
+      {showPayInfo && (
+        <PayInfoModal
+          balance={summary?.balance ?? 0}
+          school={getSchool(students.find((s) => s.id === selectedStudentId))}
+          onClose={() => setShowPayInfo(false)}
+        />
       )}
+    </div>
+  );
+}
+
+function PayInfoModal({
+  balance,
+  school,
+  onClose,
+}: {
+  balance: number;
+  school: SchoolMini | null;
+  onClose: () => void;
+}) {
+  const phone = school?.phone ?? null;
+  const waPhone = phone ? phone.replace(/[^0-9]/g, "") : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5" />
+            How to Pay
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+            <p className="text-xs text-blue-900">Outstanding balance</p>
+            <p className="text-2xl font-bold text-blue-900">{formatCurrency(balance)}</p>
+          </div>
+
+          <div>
+            <p className="font-medium mb-1">1. MTN / Vodafone / AirtelTigo MoMo</p>
+            <p className="text-gray-600">
+              Send the amount above to{" "}
+              {phone ? (
+                <a href={`tel:${phone}`} className="font-semibold text-blue-600">{phone}</a>
+              ) : (
+                <span className="text-gray-400">(school MoMo number not set)</span>
+              )}
+              . Include your child&apos;s name as the reference.
+            </p>
+          </div>
+
+          <div>
+            <p className="font-medium mb-1">2. Or pay in person</p>
+            <p className="text-gray-600">
+              {school?.address
+                ? <>Bring cash or a transfer slip to <span className="font-semibold">{school.address}</span>.</>
+                : "Visit the school office during working hours."}
+            </p>
+          </div>
+
+          <div>
+            <p className="font-medium mb-1">3. Confirm with the office</p>
+            <p className="text-gray-600">
+              After paying, message the school so your child&apos;s account can be marked. Receipts will appear in this app once confirmed.
+            </p>
+          </div>
+
+          {waPhone && (
+            <a
+              href={`https://wa.me/${waPhone}?text=${encodeURIComponent(`Hi, I just paid ${formatCurrency(balance)} for my child.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block"
+            >
+              <Button variant="outline" className="w-full">Message school on WhatsApp</Button>
+            </a>
+          )}
+        </CardContent>
+        <div className="flex justify-end gap-2 p-4 pt-0">
+          <Button onClick={onClose}>Close</Button>
+        </div>
+      </Card>
     </div>
   );
 }
