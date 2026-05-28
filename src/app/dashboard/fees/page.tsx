@@ -591,6 +591,25 @@ export default function FeesPage() {
     }
   };
 
+  const handleConfirmPayment = async (paymentId: string) => {
+    try {
+      const res = await fetch(`/api/fees/payments/${paymentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "confirmed" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to confirm");
+        return;
+      }
+      toast.success("Payment confirmed");
+      void loadAll();
+    } catch {
+      toast.error("Network error");
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -773,6 +792,7 @@ export default function FeesPage() {
                     <th className="pb-3 font-medium">Method</th>
                     <th className="pb-3 font-medium">Reference</th>
                     <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -787,6 +807,13 @@ export default function FeesPage() {
                       <td className="py-3 text-gray-600 capitalize">{(p.payment_method ?? "—").replace(/_/g, " ")}</td>
                       <td className="py-3 text-gray-500 text-xs">{p.momo_reference ?? "—"}</td>
                       <td className="py-3"><PaymentStatusBadge status={p.status} /></td>
+                      <td className="py-3">
+                        {p.status === "pending" && (
+                          <Button size="sm" variant="outline" onClick={() => handleConfirmPayment(p.id)}>
+                            Confirm
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

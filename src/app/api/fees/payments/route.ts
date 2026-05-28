@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
     const body = await request.json();
-    const { student_id, fee_assignment_id, amount_paid, payment_method, transaction_id, momo_reference, notes } = body;
+    const { student_id, fee_assignment_id, amount_paid, payment_method, transaction_id, momo_reference, notes, status } = body;
 
     if (!student_id || !amount_paid) {
       return NextResponse.json({ error: "student_id and amount_paid are required" }, { status: 400 });
@@ -68,6 +68,11 @@ export async function POST(request: NextRequest) {
     if (Number(amount_paid) <= 0) {
       return NextResponse.json({ error: "amount_paid must be greater than zero" }, { status: 400 });
     }
+
+    // Staff-recorded payments default to "confirmed" — they have the money or
+    // have verified the MoMo reference. Caller can override with status="pending"
+    // for unverified self-reports.
+    const resolvedStatus = status === "pending" ? "pending" : "confirmed";
 
     // Verify student belongs to this school
     const { data: student } = await supabase
@@ -113,7 +118,8 @@ export async function POST(request: NextRequest) {
         transaction_id: transaction_id || null,
         momo_reference: momo_reference || null,
         receipt_number: receiptNumber,
-        status: "pending",
+        status: resolvedStatus,
+        verified_at: resolvedStatus === "confirmed" ? new Date().toISOString() : null,
         notes: notes || null,
       }])
       .select("*, student:students(*), fee_assignment:fee_assignments(*, fee_structure:fee_structures(*))")
