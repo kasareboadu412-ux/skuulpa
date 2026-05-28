@@ -52,9 +52,13 @@ export async function POST(request: NextRequest) {
       .select("*, class:classes(*)")
       .single();
 
-    if (error) return NextResponse.json({ error: "Failed to create student" }, { status: 400 });
+    if (error) {
+      console.error("Students POST error:", error);
+      return NextResponse.json({ error: error.message || "Failed to create student", code: error.code }, { status: 400 });
+    }
     return NextResponse.json({ data }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  } catch (err) {
+    console.error("Students POST exception:", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal server error" }, { status: 500 });
   }
 }
