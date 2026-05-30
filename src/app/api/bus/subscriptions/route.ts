@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requireStaff } from "@/lib/auth-guard";
+import {
+  assignServiceFee,
+  perPeriodAmount,
+  BILLING_FREQUENCIES,
+  type BillingFrequency,
+} from "@/lib/service-fees";
 
 export const runtime = "nodejs";
 
@@ -41,6 +47,9 @@ export async function POST(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const body = await request.json();
     const { student_id, bus_route_id, stop_id, trip_type, start_date, end_date } = body;
+    const billing_frequency: BillingFrequency = BILLING_FREQUENCIES.includes(body.billing_frequency)
+      ? body.billing_frequency
+      : "termly";
 
     if (!student_id || !bus_route_id || !start_date) {
       return NextResponse.json({ error: "student_id, bus_route_id, and start_date are required" }, { status: 400 });
@@ -49,7 +58,7 @@ export async function POST(request: NextRequest) {
     // Verify student belongs to this school
     const { data: student } = await supabase
       .from("students")
-      .select("id")
+      .select("id, first_name, last_name")
       .eq("id", student_id)
       .eq("school_id", schoolId)
       .maybeSingle();
@@ -59,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Verify bus route belongs to this school
     const { data: route } = await supabase
       .from("bus_routes")
-      .select("id, zones")
+      .select("id, name, zones")
       .eq("id", bus_route_id)
       .eq("school_id", schoolId)
       .maybeSingle();
@@ -103,7 +112,32 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) return NextResponse.json({ error: "Failed to create bus subscription" }, { status: 400 });
-    return NextResponse.json({ data }, { status: 201 });
+
+    // Record the bus fee on the student's ledger so it is payable like any fee.
+    const label = `Bus: ${route.name} (${billing_frequency})`;
+    const feeResult = await assignServiceFee({
+      schoolId,
+      studentId: student_id,
+      category: "bus",
+      label,
+      termTotal: feeAmount,
+      frequency: billing_frequency,
+    });
+
+    return NextResponse.json(
+      {
+        data,
+        fee: feeResult
+          ? {
+              assigned: true,
+              term_total: feeAmount,
+              billing_frequency,
+              per_period: perPeriodAmount(feeAmount, billing_frequency),
+            }
+          : { assigned: false, reason: "No current term set — set a current term to bill this subscription." },
+      },
+      { status: 201 }
+    );
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

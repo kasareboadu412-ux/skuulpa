@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requireStaff } from "@/lib/auth-guard";
+import {
+  assignServiceFee,
+  perPeriodAmount,
+  BILLING_FREQUENCIES,
+  TERM_WEEKS,
+  type BillingFrequency,
+} from "@/lib/service-fees";
 
 export const runtime = "nodejs";
 
@@ -39,6 +46,10 @@ export async function POST(request: NextRequest) {
     const supabase = await createSupabaseServerClient();
     const body = await request.json();
     const { student_id, feeding_plan_id, days_per_week, start_date, end_date } = body;
+    const daysPerWeek = Number(days_per_week) > 0 ? Number(days_per_week) : 5;
+    const billing_frequency: BillingFrequency = BILLING_FREQUENCIES.includes(body.billing_frequency)
+      ? body.billing_frequency
+      : "termly";
 
     if (!student_id || !feeding_plan_id || !start_date) {
       return NextResponse.json({ error: "student_id, feeding_plan_id, and start_date are required" }, { status: 400 });
@@ -57,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Verify feeding plan belongs to this school
     const { data: plan } = await supabase
       .from("feeding_plans")
-      .select("id")
+      .select("id, name, daily_rate")
       .eq("id", feeding_plan_id)
       .eq("school_id", schoolId)
       .maybeSingle();
@@ -66,12 +77,38 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("feeding_subscriptions")
-      .insert([{ student_id, feeding_plan_id, days_per_week: days_per_week ?? 5, start_date, end_date: end_date ?? null, is_active: true }])
+      .insert([{ student_id, feeding_plan_id, days_per_week: daysPerWeek, start_date, end_date: end_date ?? null, is_active: true }])
       .select("*, student:students(*), feeding_plan:feeding_plans(*)")
       .single();
 
     if (error) return NextResponse.json({ error: "Failed to create feeding subscription" }, { status: 400 });
-    return NextResponse.json({ data }, { status: 201 });
+
+    // Term total = daily rate × days per week × weeks in term.
+    const termTotal = Math.round(Number(plan.daily_rate) * daysPerWeek * TERM_WEEKS * 100) / 100;
+    const label = `Feeding: ${plan.name} (${daysPerWeek}d/wk, ${billing_frequency})`;
+    const feeResult = await assignServiceFee({
+      schoolId,
+      studentId: student_id,
+      category: "feeding",
+      label,
+      termTotal,
+      frequency: billing_frequency,
+    });
+
+    return NextResponse.json(
+      {
+        data,
+        fee: feeResult
+          ? {
+              assigned: true,
+              term_total: termTotal,
+              billing_frequency,
+              per_period: perPeriodAmount(termTotal, billing_frequency),
+            }
+          : { assigned: false, reason: "No current term set — set a current term to bill this subscription." },
+      },
+      { status: 201 }
+    );
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

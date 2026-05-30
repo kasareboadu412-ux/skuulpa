@@ -13,6 +13,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -46,6 +53,190 @@ interface FeedingAttendance {
   date: string;
   was_fed: boolean;
   student?: { id: string; first_name: string; last_name: string; class?: { name: string } | null } | null;
+}
+
+interface StudentSearchRow {
+  id: string;
+  first_name: string;
+  last_name: string;
+  admission_number: string | null;
+  class?: { name: string } | null;
+}
+
+const BILLING_OPTIONS = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "termly", label: "Termly" },
+] as const;
+
+function SubscriptionModal({
+  open,
+  onClose,
+  onSaved,
+  plans,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  plans: FeedingPlan[];
+}) {
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<StudentSearchRow[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [student, setStudent] = useState<StudentSearchRow | null>(null);
+  const [planId, setPlanId] = useState("");
+  const [daysPerWeek, setDaysPerWeek] = useState("5");
+  const [frequency, setFrequency] = useState("termly");
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setSearch(""); setResults([]); setStudent(null); setPlanId(""); setDaysPerWeek("5");
+      setFrequency("termly"); setEndDate(""); setStartDate(new Date().toISOString().split("T")[0]);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || student || !search.trim()) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/students?search=${encodeURIComponent(search.trim())}&status=active`);
+        const data = await res.json();
+        if (res.ok) setResults((data.data ?? []).slice(0, 8));
+      } catch { /* ignore */ } finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search, open, student]);
+
+  if (!open) return null;
+
+  const selectedPlan = plans.find((p) => p.id === planId);
+  const termPreview = selectedPlan
+    ? Math.round(Number(selectedPlan.daily_rate) * (Number(daysPerWeek) || 0) * 13 * 100) / 100
+    : 0;
+
+  const handleSave = async () => {
+    if (!student) { toast.error("Select a student"); return; }
+    if (!planId) { toast.error("Select a feeding plan"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/feeding/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_id: student.id,
+          feeding_plan_id: planId,
+          days_per_week: Number(daysPerWeek) || 5,
+          billing_frequency: frequency,
+          start_date: startDate,
+          end_date: endDate || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || "Failed to subscribe"); return; }
+      if (data.fee?.assigned) {
+        toast.success(
+          `Subscribed. ${formatCurrency(data.fee.per_period)}/${data.fee.billing_frequency} — term total ${formatCurrency(data.fee.term_total)} billed to ${student.first_name}.`,
+          { duration: 9000 }
+        );
+      } else {
+        toast.success(`Subscribed. ${data.fee?.reason ?? "Fee not billed."}`, { duration: 9000 });
+      }
+      onSaved();
+      onClose();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2"><UtensilsCrossed className="h-5 w-5" /> Add Subscription</CardTitle>
+            <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+          </div>
+          <CardDescription>Enroll a student on a feeding plan. The fee is billed to their account.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!student ? (
+            <div className="space-y-2">
+              <Label htmlFor="feed-student">Student</Label>
+              <Input id="feed-student" placeholder="Search name, admission # or phone..." value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
+              {searching && <p className="text-xs text-gray-500">Searching...</p>}
+              {results.length > 0 && (
+                <div className="rounded-lg border divide-y max-h-52 overflow-y-auto">
+                  {results.map((s) => (
+                    <button key={s.id} type="button" onClick={() => setStudent(s)} className="w-full text-left p-2 hover:bg-gray-50">
+                      <p className="text-sm font-medium">{s.first_name} {s.last_name}</p>
+                      <p className="text-xs text-gray-500">{s.class?.name ?? "—"} · {s.admission_number ?? "no adm #"}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="rounded-lg border bg-gray-50 p-3 flex items-center justify-between">
+                <p className="text-sm font-medium">{student.first_name} {student.last_name}</p>
+                <Button variant="ghost" size="sm" onClick={() => setStudent(null)}>Change</Button>
+              </div>
+              <div className="space-y-2">
+                <Label>Feeding Plan</Label>
+                <Select value={planId} onValueChange={setPlanId}>
+                  <SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
+                  <SelectContent>
+                    {plans.filter((p) => p.is_active).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name} · {formatCurrency(Number(p.daily_rate))}/day</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Days / Week</Label>
+                  <Input type="number" min="1" max="7" value={daysPerWeek} onChange={(e) => setDaysPerWeek(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Billing</Label>
+                  <Select value={frequency} onValueChange={setFrequency}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {BILLING_OPTIONS.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Start Date</Label>
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>End Date (optional)</Label>
+                  <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                </div>
+              </div>
+              {termPreview > 0 && (
+                <p className="text-xs text-gray-500">Estimated term charge: <span className="font-semibold">{formatCurrency(termPreview)}</span></p>
+              )}
+            </>
+          )}
+        </CardContent>
+        <CardFooter className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !student || !planId}>{saving ? "Saving..." : "Subscribe"}</Button>
+        </CardFooter>
+      </Card>
+    </div>
+  );
 }
 
 function PlanModal({
@@ -144,6 +335,7 @@ export default function FeedingPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"plans" | "attendance" | "subs">("plans");
   const [showPlanModal, setShowPlanModal] = useState(false);
+  const [showSubModal, setShowSubModal] = useState(false);
   const [editPlan, setEditPlan] = useState<FeedingPlan | null>(null);
   const [plans, setPlans] = useState<FeedingPlan[]>([]);
   const [subscriptions, setSubscriptions] = useState<FeedingSubscription[]>([]);
@@ -333,8 +525,15 @@ export default function FeedingPage() {
       {activeTab === "subs" && (
         <Card>
           <CardHeader>
-            <CardTitle>Student Subscriptions</CardTitle>
-            <CardDescription>Active feeding subscriptions by student</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Student Subscriptions</CardTitle>
+                <CardDescription>Active feeding subscriptions by student</CardDescription>
+              </div>
+              <Button size="sm" onClick={() => setShowSubModal(true)}>
+                <Plus className="h-4 w-4 mr-1" /> Add Subscription
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -372,6 +571,13 @@ export default function FeedingPage() {
         onClose={() => { setShowPlanModal(false); setEditPlan(null); }}
         onSaved={() => void load()}
         editPlan={editPlan}
+      />
+
+      <SubscriptionModal
+        open={showSubModal}
+        onClose={() => setShowSubModal(false)}
+        onSaved={() => void load()}
+        plans={plans}
       />
     </div>
   );
