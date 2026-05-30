@@ -29,6 +29,7 @@ import {
   X,
   Eye,
   ChevronLeft,
+  Trash2,
 } from "lucide-react";
 
 interface ClassRow {
@@ -443,6 +444,8 @@ export default function StudentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -462,6 +465,26 @@ export default function StudentsPage() {
   }, []);
 
   useEffect(() => { void loadAll(); }, [loadAll]);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/students/${deleteTarget.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to remove student");
+        return;
+      }
+      toast.success(`${deleteTarget.first_name} ${deleteTarget.last_name} removed`);
+      setDeleteTarget(null);
+      void loadAll();
+    } catch {
+      toast.error("Network error. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const filtered = students.filter((s) => {
     const q = searchQuery.toLowerCase();
@@ -555,6 +578,7 @@ export default function StudentsPage() {
                       <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="icon" onClick={() => setSelectedStudent(s)}><Eye className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => { setEditStudent(s); setShowForm(true); }}><Edit className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(s)}><Trash2 className="h-4 w-4 text-red-600" /></Button>
                       </div>
                     </td>
                   </tr>
@@ -575,6 +599,27 @@ export default function StudentsPage() {
         editStudent={editStudent}
         classes={classes}
       />
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-sm">
+            <CardHeader>
+              <CardTitle>Remove student?</CardTitle>
+              <CardDescription>
+                {deleteTarget.first_name} {deleteTarget.last_name} will be withdrawn and removed from
+                active rosters. Their records (fees, attendance, results) are preserved and they can be
+                reactivated later by editing their status.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button>
+              <Button className="bg-red-600 hover:bg-red-700" onClick={handleDelete} disabled={deleting}>
+                {deleting ? "Removing..." : "Remove Student"}
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
     const body = await request.json();
-    const { student_id, fee_assignment_id, amount_paid, payment_method, transaction_id, momo_reference, notes, status } = body;
+    const { student_id, fee_assignment_id, amount_paid, payment_method, transaction_id, momo_reference, notes, status, payment_date } = body;
 
     if (!student_id || !amount_paid) {
       return NextResponse.json({ error: "student_id and amount_paid are required" }, { status: 400 });
@@ -67,6 +67,15 @@ export async function POST(request: NextRequest) {
 
     if (Number(amount_paid) <= 0) {
       return NextResponse.json({ error: "amount_paid must be greater than zero" }, { status: 400 });
+    }
+
+    // Must match the DB check constraint on fee_payments.payment_method.
+    const ALLOWED_METHODS = ["momomtn", "momovc", "momo_at", "card", "cash", "bank"];
+    if (payment_method && !ALLOWED_METHODS.includes(payment_method)) {
+      return NextResponse.json(
+        { error: `Invalid payment method. Allowed: ${ALLOWED_METHODS.join(", ")}` },
+        { status: 400 }
+      );
     }
 
     // Staff-recorded payments default to "confirmed" — they have the money or
@@ -119,6 +128,7 @@ export async function POST(request: NextRequest) {
         momo_reference: momo_reference || null,
         receipt_number: receiptNumber,
         status: resolvedStatus,
+        payment_date: payment_date || new Date().toISOString(),
         verified_at: resolvedStatus === "confirmed" ? new Date().toISOString() : null,
         notes: notes || null,
       }])

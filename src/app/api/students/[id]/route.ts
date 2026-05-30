@@ -115,7 +115,12 @@ export async function DELETE(
 ) {
   const auth = await requireStaff();
   if (auth instanceof NextResponse) return auth;
-  const { schoolId } = auth;
+  const { schoolId, role } = auth;
+
+  // Only proprietors and admins may remove students.
+  if (role !== "proprietor" && role !== "admin") {
+    return NextResponse.json({ error: "Only an admin can remove students" }, { status: 403 });
+  }
 
   try {
     const { id } = await params;

@@ -38,8 +38,16 @@ interface ClassRow {
   name: string;
   academic_year_id: string | null;
   sort_order: number | null;
+  teacher_id?: string | null;
   academic_year?: AcademicYear | null;
+  teacher?: { id: string; first_name: string; last_name: string } | null;
   students?: Array<{ count: number }>;
+}
+
+interface TeacherOption {
+  id: string;
+  first_name: string;
+  last_name: string;
 }
 
 export default function SettingsPage() {
@@ -243,6 +251,7 @@ export default function SettingsPage() {
                       <tr className="border-b text-left text-gray-500">
                         <th className="pb-3 font-medium">Name</th>
                         <th className="pb-3 font-medium">Academic Year</th>
+                        <th className="pb-3 font-medium">Class Teacher</th>
                         <th className="pb-3 font-medium">Students</th>
                         <th className="pb-3 font-medium">Sort Order</th>
                         <th className="pb-3 font-medium">Actions</th>
@@ -253,6 +262,7 @@ export default function SettingsPage() {
                         <tr key={c.id} className="border-b last:border-0 hover:bg-gray-50">
                           <td className="py-3 font-medium text-gray-900">{c.name}</td>
                           <td className="py-3 text-gray-600">{c.academic_year?.name ?? "—"}</td>
+                          <td className="py-3 text-gray-600">{c.teacher ? `${c.teacher.first_name} ${c.teacher.last_name}` : "—"}</td>
                           <td className="py-3 text-gray-600">{c.students?.[0]?.count ?? 0}</td>
                           <td className="py-3 text-gray-600">{c.sort_order ?? 0}</td>
                           <td className="py-3">
@@ -381,6 +391,8 @@ function ClassModal({
   const [name, setName] = useState("");
   const [academicYearId, setAcademicYearId] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<string>("0");
+  const [teacherId, setTeacherId] = useState<string>("none");
+  const [teachers, setTeachers] = useState<TeacherOption[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -389,13 +401,27 @@ function ClassModal({
       setName(editingClass.name);
       setAcademicYearId(editingClass.academic_year_id ?? "");
       setSortOrder(String(editingClass.sort_order ?? 0));
+      setTeacherId(editingClass.teacher_id ?? "none");
     } else {
       setName("");
       const current = academicYears.find((y) => y.is_current) ?? academicYears[0];
       setAcademicYearId(current?.id ?? "");
       setSortOrder("0");
+      setTeacherId("none");
     }
   }, [open, editingClass, academicYears]);
+
+  // Load the school's teachers for the class-teacher selector.
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/teachers?status=active");
+        const data = await res.json();
+        if (res.ok) setTeachers((data.data ?? []).map((t: TeacherOption) => ({ id: t.id, first_name: t.first_name, last_name: t.last_name })));
+      } catch { /* ignore */ }
+    })();
+  }, [open]);
 
   if (!open) return null;
 
@@ -414,6 +440,7 @@ function ClassModal({
         name: name.trim(),
         academic_year_id: academicYearId,
         sort_order: Number(sortOrder) || 0,
+        teacher_id: teacherId === "none" ? null : teacherId,
       };
       const res = await fetch(
         editingClass ? `/api/classes/${editingClass.id}` : "/api/classes",
@@ -462,6 +489,18 @@ function ClassModal({
                   <SelectItem key={y.id} value={y.id}>
                     {y.name}{y.is_current ? " (current)" : ""}
                   </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="class-teacher">Class Teacher</Label>
+            <Select value={teacherId} onValueChange={setTeacherId}>
+              <SelectTrigger id="class-teacher"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Unassigned</SelectItem>
+                {teachers.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

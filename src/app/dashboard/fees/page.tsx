@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Search,
@@ -31,6 +31,11 @@ import {
   CreditCard,
   Smartphone,
   X,
+  Calendar,
+  Printer,
+  MessageCircle,
+  Mail,
+  CheckCircle2,
 } from "lucide-react";
 
 // ─── Types matching the API ───
@@ -57,7 +62,89 @@ interface StudentRow {
   last_name: string;
   admission_number: string | null;
   parent_primary_phone: string | null;
+  parent_email?: string | null;
   class?: ClassRow | null;
+}
+
+interface RecordedReceipt {
+  receipt_number: string;
+  student_name: string;
+  class_name: string;
+  fee_name: string;
+  amount_paid: number;
+  balance_before: number;
+  payment_method: string;
+  payment_date: string;
+  status: string;
+  parent_phone: string | null;
+  parent_email: string | null;
+}
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  momomtn: "MoMo MTN",
+  momovc: "MoMo Telecel/Vodafone",
+  momo_at: "MoMo AirtelTigo",
+  cash: "Cash",
+  bank: "Bank Transfer",
+  card: "Card",
+};
+
+function prettyMethod(method: string | null): string {
+  if (!method) return "—";
+  return PAYMENT_METHOD_LABELS[method] ?? method.replace(/_/g, " ");
+}
+
+/** Convert a local Ghana number (0XXXXXXXXX) to international form for wa.me/sms. */
+function toInternational(phone: string | null): string {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("233")) return digits;
+  if (digits.startsWith("0")) return "233" + digits.slice(1);
+  return digits;
+}
+
+function buildReceiptText(r: RecordedReceipt, schoolName: string): string {
+  const lines = [
+    `${schoolName} — Payment Receipt`,
+    `Receipt No: ${r.receipt_number}`,
+    `Student: ${r.student_name}${r.class_name ? ` (${r.class_name})` : ""}`,
+    `Fee: ${r.fee_name}`,
+    `Amount Paid: ${formatCurrency(r.amount_paid)}`,
+    r.balance_before > 0 ? `Balance b/f: ${formatCurrency(r.balance_before)}` : null,
+    `Method: ${prettyMethod(r.payment_method)}`,
+    `Date: ${formatDate(r.payment_date)}`,
+    `Status: ${r.status}`,
+    ``,
+    `Thank you for your payment.`,
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+function printReceipt(r: RecordedReceipt, schoolName: string) {
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:4px 0;color:#555">${label}</td><td style="padding:4px 0;text-align:right;font-weight:600">${value}</td></tr>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Receipt ${r.receipt_number}</title>
+    <style>body{font-family:system-ui,Arial,sans-serif;max-width:340px;margin:24px auto;color:#111}
+    h2{text-align:center;margin:0 0 4px}.sub{text-align:center;color:#666;font-size:12px;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}hr{border:none;border-top:1px dashed #ccc;margin:12px 0}
+    .total{font-size:16px;font-weight:700}.foot{text-align:center;color:#666;font-size:11px;margin-top:16px}</style></head>
+    <body><h2>${schoolName}</h2><div class="sub">Payment Receipt</div>
+    <table>
+      ${row("Receipt No", r.receipt_number)}
+      ${row("Student", r.student_name)}
+      ${r.class_name ? row("Class", r.class_name) : ""}
+      ${row("Fee", r.fee_name)}
+      ${row("Method", prettyMethod(r.payment_method))}
+      ${row("Date", formatDate(r.payment_date))}
+      ${row("Status", r.status)}
+    </table><hr>
+    <table>${row("Amount Paid", formatCurrency(r.amount_paid))}${r.balance_before > 0 ? row("Balance b/f", formatCurrency(r.balance_before)) : ""}</table>
+    <div class="foot">Thank you for your payment.</div>
+    <script>window.onload=function(){window.print();}</script></body></html>`;
+  const w = window.open("", "_blank", "width=400,height=640");
+  if (!w) { toast.error("Allow pop-ups to print the receipt"); return; }
+  w.document.write(html);
+  w.document.close();
 }
 
 interface FeeAssignmentRow {
@@ -263,6 +350,66 @@ function FeeStructureModal({
   );
 }
 
+// ─── Receipt Success (print + send) ───
+
+function ReceiptSuccess({ recorded, schoolName }: { recorded: RecordedReceipt; schoolName: string }) {
+  const text = buildReceiptText(recorded, schoolName);
+  const intlPhone = toInternational(recorded.parent_phone);
+
+  const sendWhatsApp = () => {
+    if (!intlPhone) { toast.error("No parent phone on file"); return; }
+    window.open(`https://wa.me/${intlPhone}?text=${encodeURIComponent(text)}`, "_blank");
+  };
+  const sendSms = () => {
+    if (!recorded.parent_phone) { toast.error("No parent phone on file"); return; }
+    window.open(`sms:${recorded.parent_phone}?body=${encodeURIComponent(text)}`, "_self");
+  };
+  const sendEmail = () => {
+    if (!recorded.parent_email) { toast.error("No parent email on file"); return; }
+    const subject = `Payment Receipt — ${recorded.receipt_number}`;
+    window.open(`mailto:${recorded.parent_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`, "_self");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col items-center text-center gap-1 py-2">
+        <CheckCircle2 className="h-10 w-10 text-green-600" />
+        <p className="font-semibold">Payment recorded</p>
+        <p className="text-xs text-gray-500">Receipt {recorded.receipt_number}</p>
+      </div>
+
+      <div className="rounded-lg border divide-y text-sm">
+        <div className="flex justify-between p-2.5"><span className="text-gray-500">Student</span><span className="font-medium">{recorded.student_name}</span></div>
+        <div className="flex justify-between p-2.5"><span className="text-gray-500">Fee</span><span className="font-medium">{recorded.fee_name}</span></div>
+        <div className="flex justify-between p-2.5"><span className="text-gray-500">Amount</span><span className="font-medium">{formatCurrency(recorded.amount_paid)}</span></div>
+        <div className="flex justify-between p-2.5"><span className="text-gray-500">Method</span><span className="font-medium">{prettyMethod(recorded.payment_method)}</span></div>
+        <div className="flex justify-between p-2.5"><span className="text-gray-500">Date</span><span className="font-medium">{formatDate(recorded.payment_date)}</span></div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-gray-500">Receipt</p>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" size="sm" onClick={() => printReceipt(recorded, schoolName)}>
+            <Printer className="h-4 w-4 mr-1" /> Print
+          </Button>
+          <Button variant="outline" size="sm" onClick={sendWhatsApp} className="text-green-700">
+            <MessageCircle className="h-4 w-4 mr-1" /> WhatsApp
+          </Button>
+          <Button variant="outline" size="sm" onClick={sendSms}>
+            <Smartphone className="h-4 w-4 mr-1" /> SMS
+          </Button>
+          <Button variant="outline" size="sm" onClick={sendEmail} disabled={!recorded.parent_email}>
+            <Mail className="h-4 w-4 mr-1" /> Email
+          </Button>
+        </div>
+        {!recorded.parent_email && (
+          <p className="text-[11px] text-gray-400">Add a parent email to the student to enable email receipts.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Payment Dialog ───
 
 function PaymentDialog({
@@ -281,16 +428,34 @@ function PaymentDialog({
   const [assignments, setAssignments] = useState<FeeAssignmentRow[]>([]);
   const [assignmentId, setAssignmentId] = useState<string>("");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState<string>("momo_mtn");
+  const [method, setMethod] = useState<string>("momomtn");
   const [reference, setReference] = useState("");
+  const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
   const [saving, setSaving] = useState(false);
+  const [recorded, setRecorded] = useState<RecordedReceipt | null>(null);
+  const [schoolInfo, setSchoolInfo] = useState<{ name: string; phone: string | null; email: string | null } | null>(null);
 
   useEffect(() => {
     if (!open) {
       setSearch(""); setResults([]); setSelected(null); setAssignments([]);
-      setAssignmentId(""); setAmount(""); setMethod("momo_mtn"); setReference("");
+      setAssignmentId(""); setAmount(""); setMethod("momomtn"); setReference("");
+      setPaymentDate(new Date().toISOString().split("T")[0]); setRecorded(null);
     }
   }, [open]);
+
+  // Load school info once (for receipt header + sending)
+  useEffect(() => {
+    if (!open || schoolInfo) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/schools/me");
+        const data = await res.json();
+        if (res.ok && data.data) {
+          setSchoolInfo({ name: data.data.name, phone: data.data.phone ?? null, email: data.data.email ?? null });
+        }
+      } catch { /* ignore */ }
+    })();
+  }, [open, schoolInfo]);
 
   // Debounced student search
   useEffect(() => {
@@ -337,6 +502,7 @@ function PaymentDialog({
         student_id: selected.id,
         amount_paid: Number(amount),
         payment_method: method,
+        payment_date: paymentDate ? new Date(paymentDate).toISOString() : undefined,
       };
       if (assignmentId) body.fee_assignment_id = assignmentId;
       if (reference) {
@@ -355,8 +521,21 @@ function PaymentDialog({
         return;
       }
       toast.success(`Payment recorded · receipt ${data.data?.receipt_number ?? ""}`);
+      const feeName = assignments.find((a) => a.id === assignmentId)?.fee_structure?.name ?? "General payment";
+      setRecorded({
+        receipt_number: data.data?.receipt_number ?? "—",
+        student_name: `${selected.first_name} ${selected.last_name}`,
+        class_name: selected.class?.name ?? "",
+        fee_name: feeName,
+        amount_paid: Number(amount),
+        balance_before: Number(data.data?.balance_before ?? 0),
+        payment_method: method,
+        payment_date: data.data?.payment_date ?? paymentDate,
+        status: data.data?.status ?? "confirmed",
+        parent_phone: selected.parent_primary_phone,
+        parent_email: selected.parent_email ?? null,
+      });
       onSaved();
-      onClose();
     } catch {
       toast.error("Network error. Please try again.");
     } finally {
@@ -387,7 +566,9 @@ function PaymentDialog({
           <CardDescription>Record a fee payment from a parent</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {!selected ? (
+          {recorded ? (
+            <ReceiptSuccess recorded={recorded} schoolName={schoolInfo?.name ?? "Receipt"} />
+          ) : !selected ? (
             <>
               <div className="space-y-2">
                 <Label htmlFor="payment-student">Search Student</Label>
@@ -448,9 +629,18 @@ function PaymentDialog({
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="payment-amount">Amount (GH₵)</Label>
-                <Input id="payment-amount" type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="payment-amount">Amount (GH₵)</Label>
+                  <Input id="payment-amount" type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payment-date">Payment Date</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <Input id="payment-date" type="date" className="pl-9" max={new Date().toISOString().split("T")[0]} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -458,13 +648,12 @@ function PaymentDialog({
                 <Select value={method} onValueChange={setMethod}>
                   <SelectTrigger id="payment-method"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="momo_mtn">MoMo MTN</SelectItem>
-                    <SelectItem value="momo_vodafone">MoMo Vodafone</SelectItem>
-                    <SelectItem value="momo_airteltigo">MoMo AirtelTigo</SelectItem>
+                    <SelectItem value="momomtn">MoMo MTN</SelectItem>
+                    <SelectItem value="momovc">MoMo Telecel/Vodafone</SelectItem>
+                    <SelectItem value="momo_at">MoMo AirtelTigo</SelectItem>
                     <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="bank">Bank Transfer</SelectItem>
                     <SelectItem value="card">Card</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -477,11 +666,17 @@ function PaymentDialog({
           )}
         </CardContent>
         <CardFooter className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={handleRecord} disabled={saving || !selected}>
-            <CreditCard className="h-4 w-4 mr-1" />
-            {saving ? "Recording..." : "Record Payment"}
-          </Button>
+          {recorded ? (
+            <Button onClick={onClose}>Done</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+              <Button onClick={handleRecord} disabled={saving || !selected}>
+                <CreditCard className="h-4 w-4 mr-1" />
+                {saving ? "Recording..." : "Record Payment"}
+              </Button>
+            </>
+          )}
         </CardFooter>
       </Card>
     </div>
