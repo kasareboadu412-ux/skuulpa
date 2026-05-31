@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { FileSpreadsheet, Plus, X, Calendar, ChevronRight } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileSpreadsheet, Plus, X, ChevronRight, Camera, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +33,7 @@ interface Assessment {
   assessment_scores?: Array<{ count: number }>;
 }
 
-interface Student { id: string; first_name: string; last_name: string }
+interface Student { id: string; first_name: string; last_name: string; admission_number?: string | null }
 
 interface Score { student_id: string; score: number | null }
 
@@ -57,9 +57,18 @@ export default function TeacherAssessmentsPage() {
 
   // Score-entry modal state
   const [scoreModal, setScoreModal] = useState<{ open: boolean; assessment: Assessment | null }>({ open: false, assessment: null });
+  const [scoreTab, setScoreTab] = useState<"manual" | "scan">("manual");
   const [roster, setRoster] = useState<Student[]>([]);
   const [scores, setScores] = useState<Record<string, string>>({});
   const [savingScores, setSavingScores] = useState(false);
+
+  // Scan tab state
+  const [scanImage, setScanImage] = useState<File | null>(null);
+  const [scanPreview, setScanPreview] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanResults, setScanResults] = useState<Array<{ student_id: string; score: number | null; matched_name: string }> | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,6 +147,8 @@ export default function TeacherAssessmentsPage() {
 
   const openScoreEntry = async (assessment: Assessment) => {
     if (!assessment.class) return;
+    setScoreTab("manual");
+    setScanImage(null); setScanPreview(null); setScanResults(null); setScanError(null);
     setScoreModal({ open: true, assessment });
     try {
       const [sRes, scoreRes] = await Promise.all([
@@ -153,6 +164,50 @@ export default function TeacherAssessmentsPage() {
       setScores(existing);
     } catch {
       toast.error("Failed to load roster");
+    }
+  };
+
+  const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setScanImage(file);
+    setScanResults(null);
+    setScanError(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => setScanPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleScan = async () => {
+    if (!scanImage || !scoreModal.assessment) return;
+    setScanning(true);
+    setScanError(null);
+    try {
+      const fd = new FormData();
+      fd.append("image", scanImage);
+      fd.append("roster", JSON.stringify(roster.map((s) => ({
+        id: s.id,
+        first_name: s.first_name,
+        last_name: s.last_name,
+        admission_number: (s as Student & { admission_number?: string | null }).admission_number ?? null,
+      }))));
+      fd.append("max_score", String(scoreModal.assessment.max_score));
+      fd.append("assessment_name", scoreModal.assessment.name);
+
+      const res = await fetch("/api/academics/scores/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) { setScanError(data.error || "Scan failed"); return; }
+      setScanResults(data.scores ?? []);
+      // Pre-fill manual scores so teacher can review/edit before saving.
+      const merged = { ...scores };
+      for (const r of data.scores ?? []) {
+        if (r.score !== null) merged[r.student_id] = String(r.score);
+      }
+      setScores(merged);
+    } catch {
+      setScanError("Network error. Please try again.");
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -296,37 +351,144 @@ export default function TeacherAssessmentsPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Enter Scores · {scoreModal.assessment.name}</CardTitle>
+                  <CardTitle>{scoreModal.assessment.name}</CardTitle>
                   <CardDescription>Max score: {scoreModal.assessment.max_score}</CardDescription>
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => setScoreModal({ open: false, assessment: null })}><X className="h-4 w-4" /></Button>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {roster.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-8">No students in this class.</p>
-                ) : roster.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between gap-2 border-b pb-2">
-                    <p className="text-sm">{s.first_name} {s.last_name}</p>
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="number"
-                        min="0"
-                        max={scoreModal.assessment?.max_score}
-                        value={scores[s.id] ?? ""}
-                        onChange={(e) => setScores({ ...scores, [s.id]: e.target.value })}
-                        className="w-24"
-                      />
-                      <span className="text-xs text-gray-500">/ {scoreModal.assessment?.max_score}</span>
-                    </div>
-                  </div>
-                ))}
+              {/* Manual / Scan toggle */}
+              <div className="flex rounded-lg border p-1 bg-muted/50 mt-2 w-fit gap-1">
+                <button
+                  type="button"
+                  onClick={() => setScoreTab("manual")}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${scoreTab === "manual" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  Enter Manually
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScoreTab("scan")}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${scoreTab === "scan" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  Scan Score Sheet
+                </button>
               </div>
+            </CardHeader>
+
+            <CardContent>
+              {scoreTab === "manual" ? (
+                <div className="space-y-2">
+                  {roster.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-8">No students in this class.</p>
+                  ) : roster.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between gap-2 border-b pb-2">
+                      <p className="text-sm">{s.first_name} {s.last_name}</p>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min="0"
+                          max={scoreModal.assessment?.max_score}
+                          value={scores[s.id] ?? ""}
+                          onChange={(e) => setScores({ ...scores, [s.id]: e.target.value })}
+                          className="w-24"
+                        />
+                        <span className="text-xs text-gray-500">/ {scoreModal.assessment?.max_score}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">
+                    Take a clear photo of your handwritten score sheet. Scores will be extracted automatically — you can review and correct them before saving.
+                  </p>
+
+                  {/* Image picker */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleImagePick}
+                  />
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                      <Camera className="h-4 w-4 mr-1" />
+                      {scanImage ? "Change Photo" : "Take / Upload Photo"}
+                    </Button>
+                    {scanImage && !scanning && (
+                      <Button onClick={handleScan} disabled={scanning}>
+                        {scanning ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Scanning...</> : "Extract Scores"}
+                      </Button>
+                    )}
+                    {scanning && (
+                      <Button disabled>
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />Scanning...
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Preview */}
+                  {scanPreview && (
+                    <img src={scanPreview} alt="Score sheet preview" className="rounded-lg border max-h-48 object-contain w-full" />
+                  )}
+
+                  {/* Error */}
+                  {scanError && (
+                    <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                      <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      {scanError}
+                    </div>
+                  )}
+
+                  {/* Results review */}
+                  {scanResults !== null && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+                        <CheckCircle2 className="h-4 w-4" />
+                        {scanResults.length} scores detected — review and edit below, then Save Scores.
+                      </div>
+                      <div className="space-y-2">
+                        {roster.map((s) => {
+                          const hit = scanResults.find((r) => r.student_id === s.id);
+                          return (
+                            <div key={s.id} className={`flex items-center justify-between gap-2 border-b pb-2 ${hit ? "" : "opacity-50"}`}>
+                              <div>
+                                <p className="text-sm">{s.first_name} {s.last_name}</p>
+                                {hit?.matched_name && hit.matched_name.toLowerCase() !== `${s.first_name} ${s.last_name}`.toLowerCase() && (
+                                  <p className="text-xs text-gray-400">Read as: {hit.matched_name}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max={scoreModal.assessment?.max_score}
+                                  value={scores[s.id] ?? ""}
+                                  onChange={(e) => setScores({ ...scores, [s.id]: e.target.value })}
+                                  className={`w-24 ${hit && scores[s.id] ? "border-green-400" : ""}`}
+                                  placeholder="—"
+                                />
+                                <span className="text-xs text-gray-500">/ {scoreModal.assessment?.max_score}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
+
             <CardFooter className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setScoreModal({ open: false, assessment: null })} disabled={savingScores}>Cancel</Button>
-              <Button onClick={handleSaveScores} disabled={savingScores || roster.length === 0}>{savingScores ? "Saving..." : "Save Scores"}</Button>
+              <Button onClick={handleSaveScores} disabled={savingScores || roster.length === 0}>
+                {savingScores ? "Saving..." : "Save Scores"}
+              </Button>
             </CardFooter>
           </Card>
         </div>
