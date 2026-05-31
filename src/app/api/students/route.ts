@@ -3,6 +3,7 @@ import { createSupabaseServerClient, getServiceClient } from "@/lib/supabase-ser
 import { requireStaff } from "@/lib/auth-guard";
 import { ensureParentAccount } from "@/lib/parent-account";
 import { applyCurrentTermClassFees } from "@/lib/apply-fees";
+import { generateAdmissionNumber } from "@/lib/admission";
 
 export const runtime = "nodejs";
 
@@ -37,44 +38,6 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-}
-
-/**
- * Generate a unique admission number for a school: <SHORTCODE>-<YEAR>-<NNNN>.
- * admission_number is globally unique, so we probe for the next free sequence.
- */
-async function generateAdmissionNumber(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  schoolId: string
-): Promise<string> {
-  const { data: school } = await supabase
-    .from("schools")
-    .select("short_code")
-    .eq("id", schoolId)
-    .maybeSingle();
-
-  const prefix = ((school?.short_code as string) || "STU").toUpperCase();
-  const year = new Date().getFullYear();
-
-  const { count } = await supabase
-    .from("students")
-    .select("id", { count: "exact", head: true })
-    .eq("school_id", schoolId);
-
-  let seq = (count ?? 0) + 1;
-  for (let i = 0; i < 50; i++) {
-    const candidate = `${prefix}-${year}-${String(seq).padStart(4, "0")}`;
-    const { data: clash } = await supabase
-      .from("students")
-      .select("id")
-      .eq("admission_number", candidate)
-      .maybeSingle();
-    if (!clash) return candidate;
-    seq++;
-  }
-  // Fallback guaranteed-unique value.
-  return `${prefix}-${year}-${Date.now().toString().slice(-6)}`;
 }
 
 export async function POST(request: NextRequest) {

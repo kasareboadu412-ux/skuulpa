@@ -30,6 +30,9 @@ import {
   Eye,
   ChevronLeft,
   Trash2,
+  Upload,
+  Download,
+  FileSpreadsheet,
 } from "lucide-react";
 
 interface ClassRow {
@@ -434,6 +437,218 @@ function StudentDetailView({
   );
 }
 
+// ─── Batch import ───
+
+const IMPORT_HEADERS = [
+  "first_name", "last_name", "admission_number", "class_name", "date_of_birth",
+  "parent_primary_phone", "parent_secondary_phone", "parent_email", "previous_balance",
+];
+
+function downloadTemplate() {
+  const example = ["Ama", "Mensah", "", "Class 4", "2015-03-12", "0244123456", "", "ama.parent@example.com", "150"];
+  const csv = [IMPORT_HEADERS.join(","), example.join(",")].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "student-import-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseCSV(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let field = "", inQuotes = false;
+  let record: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ",") { record.push(field); field = ""; }
+      else if (ch === "\n") { record.push(field); rows.push(record); record = []; field = ""; }
+      else if (ch === "\r") { /* skip */ }
+      else field += ch;
+    }
+  }
+  if (field.length > 0 || record.length > 0) { record.push(field); rows.push(record); }
+  if (rows.length === 0) return [];
+  const headers = rows[0].map((h) => h.trim());
+  return rows.slice(1)
+    .filter((r) => r.some((c) => c.trim() !== ""))
+    .map((r) => {
+      const obj: Record<string, string> = {};
+      headers.forEach((h, idx) => { obj[h] = (r[idx] ?? "").trim(); });
+      return obj;
+    });
+}
+
+interface ImportResult {
+  row: number;
+  name: string;
+  status: "created" | "skipped" | "failed";
+  admission_number?: string | null;
+  parent_pin?: string | null;
+  balance_added?: number;
+  message?: string;
+}
+
+function ImportModal({
+  open,
+  onClose,
+  onImported,
+  classes,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+  classes: ClassRow[];
+}) {
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [results, setResults] = useState<{ created: number; failed: number; results: ImportResult[] } | null>(null);
+
+  useEffect(() => {
+    if (!open) { setRows([]); setFileName(""); setResults(null); setImporting(false); }
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setResults(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = parseCSV(String(ev.target?.result ?? ""));
+        setRows(parsed);
+        if (parsed.length === 0) toast.error("No rows found in the file");
+      } catch {
+        toast.error("Could not read the CSV file");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    if (rows.length === 0) { toast.error("Upload a filled template first"); return; }
+    setImporting(true);
+    try {
+      const res = await fetch("/api/students/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || "Import failed"); return; }
+      setResults({ created: data.created, failed: data.failed, results: data.results ?? [] });
+      toast.success(`Imported ${data.created} student(s)${data.failed ? `, ${data.failed} failed` : ""}`);
+      onImported();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" /> Batch Import Students</CardTitle>
+            <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+          </div>
+          <CardDescription>Download the template, fill it in, then upload to add many students at once.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!results ? (
+            <>
+              <div className="rounded-lg border bg-gray-50 p-3 space-y-2 text-sm">
+                <p className="font-medium">How it works</p>
+                <ol className="list-decimal list-inside text-gray-600 space-y-1">
+                  <li>Download the CSV template and open it in Excel.</li>
+                  <li>One student per row. <span className="font-medium">first_name, last_name, parent_primary_phone</span> are required.</li>
+                  <li><span className="font-medium">previous_balance</span> = fees owed from the previous term (added to the student&apos;s account).</li>
+                  <li>Leave <span className="font-medium">admission_number</span> blank to auto-generate.</li>
+                  <li>Save as CSV and upload below.</li>
+                </ol>
+                {classes.length > 0 && (
+                  <p className="text-xs text-gray-500">
+                    Valid class names: {classes.map((c) => c.name).join(", ")}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={downloadTemplate}>
+                  <Download className="h-4 w-4 mr-1" /> Download Template
+                </Button>
+                <label>
+                  <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
+                  <Button variant="outline" asChild><span><Upload className="h-4 w-4 mr-1" /> Upload Filled CSV</span></Button>
+                </label>
+              </div>
+
+              {fileName && (
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">{fileName}</span> — {rows.length} student row(s) ready to import.
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-4 text-sm">
+                <span className="text-green-700 font-medium">{results.created} created</span>
+                {results.failed > 0 && <span className="text-red-700 font-medium">{results.failed} failed</span>}
+              </div>
+              <div className="rounded-lg border divide-y max-h-72 overflow-y-auto text-sm">
+                {results.results.map((r) => (
+                  <div key={r.row} className="flex items-start justify-between gap-2 p-2">
+                    <div>
+                      <p className="font-medium">Row {r.row}: {r.name}</p>
+                      {r.status === "created" ? (
+                        <p className="text-xs text-gray-500">
+                          {r.admission_number}
+                          {r.parent_pin ? ` · Parent PIN ${r.parent_pin}` : ""}
+                          {r.balance_added ? ` · Balance ${formatCurrency(r.balance_added)}` : ""}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-red-600">{r.message}</p>
+                      )}
+                    </div>
+                    <Badge variant={r.status === "created" ? "success" : "danger"}>{r.status}</Badge>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500">Share each parent&apos;s PIN with them so they can log in. PINs are shown once here.</p>
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="flex justify-end gap-2">
+          {!results ? (
+            <>
+              <Button variant="outline" onClick={onClose} disabled={importing}>Cancel</Button>
+              <Button onClick={handleImport} disabled={importing || rows.length === 0}>
+                {importing ? "Importing..." : `Import ${rows.length || ""} Students`}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={onClose}>Done</Button>
+          )}
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
+
 export default function StudentsPage() {
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<Student[]>([]);
@@ -446,6 +661,7 @@ export default function StudentsPage() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -518,10 +734,16 @@ export default function StudentsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Student Management</h1>
           <p className="text-sm text-gray-500 mt-1">{activeCount} active students</p>
         </div>
-        <Button onClick={() => { setEditStudent(null); setShowForm(true); }}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add Student
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowImport(true)}>
+            <Upload className="h-4 w-4 mr-1" />
+            Import
+          </Button>
+          <Button onClick={() => { setEditStudent(null); setShowForm(true); }}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add Student
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -597,6 +819,13 @@ export default function StudentsPage() {
         onClose={() => { setShowForm(false); setEditStudent(null); }}
         onSaved={() => void loadAll()}
         editStudent={editStudent}
+        classes={classes}
+      />
+
+      <ImportModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={() => void loadAll()}
         classes={classes}
       />
 
