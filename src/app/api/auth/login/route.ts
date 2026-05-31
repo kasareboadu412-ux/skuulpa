@@ -174,13 +174,18 @@ async function handleStaffLogin(body: Record<string, unknown>) {
   }
 
   // ─── Check if super admin ───
-  const { data: superAdmin } = await (supabase as any)
-    .from("super_admins")
-    .select("id, role")
-    .eq("email", user.email)
-    .maybeSingle();
+  const userEmail = user.email?.toLowerCase().trim() ?? "";
+  const envEmail = (process.env.SUPER_ADMIN_EMAIL ?? "").toLowerCase().trim();
 
-  const isSuperAdmin = !!superAdmin;
+  let isSuperAdmin = !!(envEmail && userEmail === envEmail);
+  if (!isSuperAdmin) {
+    const { data: superAdmin } = await (supabase as any)
+      .from("super_admins")
+      .select("id, role")
+      .eq("email", userEmail)
+      .maybeSingle();
+    isSuperAdmin = !!superAdmin;
+  }
   const finalRole = isSuperAdmin ? "super_admin" : role;
 
   // ─── Return user and session ───
@@ -190,7 +195,7 @@ async function handleStaffLogin(body: Record<string, unknown>) {
       email: user.email,
       role: finalRole,
       is_super_admin: isSuperAdmin,
-      super_admin_role: isSuperAdmin ? (superAdmin?.role ?? null) : null,
+      super_admin_role: isSuperAdmin ? "super_admin" : null,
       profile,
     },
     session: {

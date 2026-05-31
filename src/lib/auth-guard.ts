@@ -112,11 +112,20 @@ export async function requireSuperAdmin(): Promise<SuperAdminAuthContext | NextR
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const userEmail = user.email?.toLowerCase().trim() ?? "";
+
+  // Accept the hardcoded platform owner email from env (no DB lookup needed).
+  const envEmail = (process.env.SUPER_ADMIN_EMAIL ?? "").toLowerCase().trim();
+  if (envEmail && userEmail === envEmail) {
+    return { userId: user.id };
+  }
+
+  // Also accept any row in the super_admins table.
   const db = getServiceClient();
   const { data: superAdmin } = await db
     .from("super_admins")
     .select("id")
-    .eq("email", user.email)
+    .eq("email", userEmail)
     .maybeSingle();
 
   if (!superAdmin) {
