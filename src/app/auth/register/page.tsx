@@ -83,14 +83,14 @@ export default function RegisterPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary shadow-lg mb-4">
             <School className="w-8 h-8 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-bold">Skooly</h1>
+          <h1 className="text-3xl font-bold">Skuulr</h1>
           <p className="text-muted-foreground mt-1">Register your school</p>
         </div>
 
         <Card className="shadow-xl">
           <CardHeader className="pb-4">
             <CardTitle className="text-xl">Create Your School Account</CardTitle>
-            <CardDescription>Get started with Skooly in minutes</CardDescription>
+            <CardDescription>Get started with Skuulr in minutes</CardDescription>
           </CardHeader>
 
           <form onSubmit={handleSubmit}>

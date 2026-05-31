@@ -222,7 +222,7 @@ export default function AdmissionForm() {
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center">
-          <span className="text-xl font-bold text-blue-600">Skooly</span>
+          <span className="text-xl font-bold text-blue-600">Skuulr</span>
           <span className="ml-2 text-sm text-gray-500">/ Admissions</span>
         </div>
       </header>

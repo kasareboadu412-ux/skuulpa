@@ -6,7 +6,7 @@ export default function HomePage() {
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-2xl font-bold text-blue-600">Skooly</span>
+            <span className="text-2xl font-bold text-blue-600">Skuulr</span>
           </div>
           <nav className="flex items-center gap-4">
             <Link href="/auth/login" className="text-sm font-medium text-gray-600 hover:text-gray-900">
@@ -62,7 +62,7 @@ export default function HomePage() {
       </main>
 
       <footer className="border-t bg-white py-8 text-center text-sm text-gray-500">
-        <p>© {new Date().getFullYear()} Skooly. Built for Ghanaian private schools.</p>
+        <p>© {new Date().getFullYear()} Skuulr. Built for Ghanaian private schools.</p>
       </footer>
     </div>
   );

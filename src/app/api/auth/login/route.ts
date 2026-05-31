@@ -209,7 +209,7 @@ async function handleStaffLogin(body: Record<string, unknown>) {
 /**
  * Handle parent login via phone number + PIN.
  *
- * Parent accounts use a synthetic email (phone@skooly.parent) as the
+ * Parent accounts use a synthetic email (phone@skuulr.parent) as the
  * Supabase Auth identifier, with the PIN as their password.
  */
 async function handleParentLogin(body: Record<string, unknown>) {
@@ -242,7 +242,7 @@ async function handleParentLogin(body: Record<string, unknown>) {
   }
 
   // ─── Construct parent email for Supabase Auth lookup ───
-  const parentEmail = `parent_${phoneStr}@skooly.parent`;
+  const parentEmail = `parent_${phoneStr}@skuulr.parent`;
 
   const supabase = await createSupabaseServerClient();
 

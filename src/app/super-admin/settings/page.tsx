@@ -49,8 +49,8 @@ type NotificationSettings = {
 };
 
 const defaultPlatformSettings: PlatformSettings = {
-  platformName: "Skooly",
-  supportEmail: "support@skooly.com",
+  platformName: "Skuulr",
+  supportEmail: "support@skuulr.com",
   defaultPlan: "free",
   defaultTrialDays: 14,
   currency: "GHS",
@@ -123,7 +123,7 @@ export default function SuperAdminSettings() {
   useEffect(() => {
     // Load saved settings from localStorage as a simple persistence layer
     try {
-      const saved = localStorage.getItem("skooly-super-admin-settings");
+      const saved = localStorage.getItem("skuulr-super-admin-settings");
       if (saved) {
         const parsed = JSON.parse(saved);
         setPlatformSettings(parsed.platform || defaultPlatformSettings);
@@ -142,7 +142,7 @@ export default function SuperAdminSettings() {
     try {
       // Persist to localStorage (in a real app this would hit an API)
       localStorage.setItem(
-        "skooly-super-admin-settings",
+        "skuulr-super-admin-settings",
         JSON.stringify({
           platform: platformSettings,
           notifications: notificationSettings,
@@ -150,7 +150,7 @@ export default function SuperAdminSettings() {
       );
 
       localStorage.setItem(
-        "skooly-super-admin-name",
+        "skuulr-super-admin-name",
         platformSettings.platformName
       );
 
@@ -361,7 +361,7 @@ export default function SuperAdminSettings() {
                     id="adminEmail"
                     type="email"
                     className="pl-9"
-                    placeholder="admin@skooly.com"
+                    placeholder="admin@skuulr.com"
                     value={notificationSettings.adminEmail}
                     onChange={(e) =>
                       setNotificationSettings((prev) => ({

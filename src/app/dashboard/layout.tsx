@@ -75,7 +75,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profile, setProfile] = useState<ProfileInfo>({
-    schoolName: "Skooly",
+    schoolName: "Skuulr",
     userName: "Administrator",
     initials: "AD",
   });
@@ -154,32 +154,36 @@ export default function DashboardLayout({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[hsl(40_20%_98%)] flex">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-white border-r border-gray-200 transition-transform duration-300 lg:translate-x-0 lg:static lg:z-auto",
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
+        style={{ background: "hsl(150 60% 14%)" }}
       >
-        {/* Logo area */}
-        <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-6">
-          <School className="h-7 w-7 text-blue-600" />
-          <span className="text-lg font-bold text-gray-900 truncate">
-            {profile.schoolName}
-          </span>
+        {/* Logo + school name */}
+        <div className="flex h-16 items-center gap-3 px-5 border-b border-white/10">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500 flex-shrink-0">
+            <School className="h-4 w-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-white/50 leading-none mb-0.5">Skuulr</p>
+            <p className="text-sm font-semibold text-white truncate leading-none">{profile.schoolName}</p>
+          </div>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
           {visibleNav.map((item) => {
             const isActive =
               item.href === "/dashboard"
@@ -191,13 +195,11 @@ export default function DashboardLayout({
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-blue-50 text-blue-700"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                  "sidebar-link",
+                  isActive && "active"
                 )}
               >
-                <item.icon className="h-5 w-5 flex-shrink-0" />
+                <item.icon className="h-4.5 w-4.5 flex-shrink-0" />
                 {item.name}
               </Link>
             );
@@ -205,77 +207,68 @@ export default function DashboardLayout({
         </nav>
 
         {/* Sidebar footer */}
-        <div className="border-t border-gray-200 p-4">
-          <p className="text-xs text-gray-400">Skooly v0.1.0</p>
+        <div className="px-5 py-4 border-t border-white/10">
+          <p className="text-[11px] text-white/30 font-medium tracking-wide">SKUULR · v0.2.0</p>
         </div>
       </aside>
 
-      {/* Main area */}
-      <div className="lg:pl-64">
+      {/* ── Main area ── */}
+      <div className="flex-1 flex flex-col min-w-0 lg:min-h-screen">
         {/* Top header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-gray-200 bg-white px-4 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-gray-200 bg-white/90 backdrop-blur-sm px-4 sm:px-6">
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden h-9 w-9"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
           >
-            {sidebarOpen ? (
-              <X className="h-5 w-5" />
-            ) : (
-              <Menu className="h-5 w-5" />
-            )}
+            {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </Button>
 
           <div className="flex-1" />
 
-          <Button variant="ghost" size="icon" className="relative" title="Notifications">
-            <Bell className="h-5 w-5 text-gray-600" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+            title="Notifications"
+          >
+            <Bell className="h-4 w-4" />
           </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="flex items-center gap-2 px-2"
-              >
-                <Avatar className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-                  <AvatarFallback className="text-xs font-medium text-blue-700">
-                    {profile.initials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden sm:inline text-sm font-medium text-gray-700">
+              <Button variant="ghost" className="flex items-center gap-2 px-2 h-9 rounded-full hover:bg-gray-100 cursor-pointer">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0"
+                  style={{ background: "hsl(150 80% 24%)" }}>
+                  {profile.initials}
+                </div>
+                <span className="hidden sm:inline text-sm font-medium text-gray-700 max-w-[120px] truncate">
                   {profile.userName}
                 </span>
-                <ChevronDown className="h-4 w-4 text-gray-500" />
+                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-56 rounded-lg border bg-white shadow-lg p-1 mt-1"
-            >
-              <DropdownMenuLabel className="px-2 py-1.5 text-sm font-semibold text-gray-900">
-                My Account
+            <DropdownMenuContent align="end" className="w-52 rounded-xl border border-gray-200 bg-white shadow-xl p-1.5 mt-2">
+              <DropdownMenuLabel className="px-2.5 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                Account
               </DropdownMenuLabel>
-              <DropdownMenuSeparator className="my-1 h-px bg-gray-200" />
+              <DropdownMenuSeparator className="my-1 h-px bg-gray-100" />
               <DropdownMenuItem
-                className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded cursor-pointer outline-none"
+                className="flex items-center gap-2.5 px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg cursor-pointer outline-none"
                 onSelect={() => router.push("/dashboard/settings")}
               >
-                <Settings className="h-4 w-4" />
+                <Settings className="h-4 w-4 text-gray-400" />
                 Settings
               </DropdownMenuItem>
-              <DropdownMenuSeparator className="my-1 h-px bg-gray-200" />
+              <DropdownMenuSeparator className="my-1 h-px bg-gray-100" />
               <DropdownMenuItem
-                className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded cursor-pointer outline-none"
+                className="flex items-center gap-2.5 px-2.5 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg cursor-pointer outline-none"
                 disabled={loggingOut}
-                onSelect={(e) => {
-                  e.preventDefault();
-                  void handleLogout();
-                }}
+                onSelect={(e) => { e.preventDefault(); void handleLogout(); }}
               >
                 <LogOut className="h-4 w-4" />
-                {loggingOut ? "Signing out..." : "Sign out"}
+                {loggingOut ? "Signing out…" : "Sign out"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

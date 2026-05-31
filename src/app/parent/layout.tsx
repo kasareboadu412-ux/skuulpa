@@ -120,7 +120,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               <School className="h-6 w-6 text-blue-600" />
             )}
             <span className="font-bold text-base text-gray-900 truncate max-w-[120px] sm:max-w-[200px]">
-              {school?.name || "Skooly"}
+              {school?.name || "Skuulr"}
             </span>
           </Link>
 

@@ -29,7 +29,7 @@ export function normalizeParentPhone(phone: string): string {
  * Ensure a parent login account exists for the given phone number.
  *
  * Parents log in with phone + PIN. Under the hood each parent is a Supabase
- * Auth user keyed by a synthetic email `parent_<phone>@skooly.parent`, with the
+ * Auth user keyed by a synthetic email `parent_<phone>@skuulr.parent`, with the
  * PIN stored as their password and `{ role: "parent" }` in user metadata.
  *
  * This is idempotent:
@@ -65,7 +65,7 @@ export async function ensureParentAccount(
   }
 
   // ── Create a fresh parent auth account ──
-  const email = `parent_${normalized}@skooly.parent`;
+  const email = `parent_${normalized}@skuulr.parent`;
   const digits = normalized.replace(/\D/g, "");
   const pin = digits.slice(-4);
 

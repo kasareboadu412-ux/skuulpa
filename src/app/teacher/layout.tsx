@@ -174,7 +174,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
             <Link href="/teacher" className="flex items-center gap-2">
               <GraduationCap className="h-6 w-6 text-blue-600" />
-              <span className="font-bold text-lg text-gray-900">Skooly</span>
+              <span className="font-bold text-lg text-gray-900">Skuulr</span>
               <Badge variant="outline" className="text-xs ml-1">Teacher</Badge>
             </Link>
             <button

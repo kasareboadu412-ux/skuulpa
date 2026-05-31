@@ -116,148 +116,172 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50 p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary shadow-lg mb-4">
-            <School className="w-8 h-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight">Skooly</h1>
-          <p className="text-muted-foreground mt-1">School Management System</p>
-        </div>
-
-        <Card className="shadow-xl">
-          <CardHeader className="pb-4">
-            <div className="flex rounded-lg border p-1 bg-muted/50 mb-4">
-              <button
-                type="button"
-                onClick={() => { setMode("staff"); setError(null); }}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-all",
-                  mode === "staff"
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <UserCheck className="w-4 h-4" />
-                Staff Login
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMode("parent"); setError(null); }}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-all",
-                  mode === "parent"
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Phone className="w-4 h-4" />
-                Parent Login
-              </button>
+    <div className="min-h-screen flex" style={{ background: "hsl(40 20% 98%)" }}>
+      {/* Left decorative panel — hidden on mobile */}
+      <div className="hidden lg:flex lg:w-[420px] xl:w-[480px] flex-col justify-between p-12 flex-shrink-0"
+        style={{ background: "hsl(150 60% 14%)" }}>
+        <div>
+          <div className="flex items-center gap-2.5 mb-16">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500">
+              <School className="h-5 w-5 text-white" />
             </div>
-            <CardTitle className="text-xl">
-              {mode === "staff" ? "Staff Sign In" : "Parent Sign In"}
-            </CardTitle>
-            <CardDescription>
-              {mode === "staff"
-                ? "Sign in with your school email and password."
-                : "Sign in with your registered phone number and PIN."}
-            </CardDescription>
-          </CardHeader>
+            <span className="text-2xl font-extrabold text-white tracking-tight" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", letterSpacing: "-0.04em" }}>
+              Skuulr
+            </span>
+          </div>
+          <h2 className="text-3xl font-bold text-white mb-4 leading-snug" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            The smarter way to run your school
+          </h2>
+          <p className="text-white/60 text-base leading-relaxed">
+            Fees, admissions, academics, bus, feeding — everything your private basic school needs, built for Ghana.
+          </p>
+        </div>
+        <div className="space-y-4">
+          {[
+            { num: "2,400+", label: "Students managed" },
+            { num: "18 schools", label: "Active on Skuulr" },
+            { num: "GH₵ 4M+", label: "Fees collected" },
+          ].map((s) => (
+            <div key={s.label} className="flex items-center gap-4">
+              <div className="h-px flex-1 bg-white/10" />
+              <span className="text-amber-400 font-bold text-sm">{s.num}</span>
+              <span className="text-white/50 text-xs">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
+      {/* Right: login form */}
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="w-full max-w-sm">
+          {/* Mobile logo */}
+          <div className="flex items-center justify-center gap-2 mb-8 lg:hidden">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
+              <School className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-2xl font-extrabold tracking-tight" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", letterSpacing: "-0.04em", color: "hsl(150 80% 24%)" }}>
+              Skuulr
+            </span>
+          </div>
 
-              {mode === "staff" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input id="email" type="email" placeholder="you@school.edu.gh"
-                        value={email} onChange={(e) => setEmail(e.target.value)}
-                        className="pl-10" autoComplete="email" disabled={isLoading} required />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input id="password" type={showPassword ? "text" : "password"}
-                        placeholder="Enter your password" value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10 pr-10" autoComplete="current-password" disabled={isLoading} required />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}
-                        aria-label={showPassword ? "Hide password" : "Show password"}>
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input id="phone" type="tel" placeholder="024 123 4567"
-                        value={phone} onChange={(e) => setPhone(e.target.value)}
-                        className="pl-10" autoComplete="tel" disabled={isLoading} required />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="pin">PIN</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input id="pin" type={showPin ? "text" : "password"}
-                        placeholder="Enter your PIN" value={pin}
-                        onChange={(e) => setPin(e.target.value)}
-                        className="pl-10 pr-10" autoComplete="off"
-                        maxLength={8} inputMode="numeric" pattern="[0-9]*" disabled={isLoading} required />
-                      <button type="button" onClick={() => setShowPin(!showPin)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}
-                        aria-label={showPin ? "Hide PIN" : "Show PIN"}>
-                        {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            {mode === "staff" ? "Welcome back" : "Parent sign in"}
+          </h1>
+          <p className="text-sm text-gray-500 mb-6">
+            {mode === "staff" ? "Sign in to your school dashboard." : "Enter your phone number and PIN."}
+          </p>
 
-            <CardFooter className="flex flex-col gap-4 pt-0">
-              <Button type="submit" className="w-full gap-2" size="lg" disabled={isLoading}>
-                {isLoading ? (
-                  <><span className="inline-block w-4 h-4 border-2 border-background border-t-transparent rounded-full animate-spin" /> Signing in...</>
-                ) : (
-                  <><LogIn className="w-4 h-4" /> Sign In</>
+          {/* Mode toggle */}
+          <div className="flex rounded-xl border border-gray-200 p-1 mb-6 bg-gray-50">
+            {(["staff", "parent"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setMode(m); setError(null); }}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all cursor-pointer",
+                  mode === m
+                    ? "bg-white shadow-sm text-gray-900"
+                    : "text-gray-500 hover:text-gray-700"
                 )}
-              </Button>
-              {mode === "staff" && (
-                <p className="text-xs text-muted-foreground">
-                  Forgot your password? Contact your school administrator.
-                </p>
-              )}
-            </CardFooter>
-          </form>
-        </Card>
+              >
+                {m === "staff" ? <UserCheck className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
+                {m === "staff" ? "Staff" : "Parent"}
+              </button>
+            ))}
+          </div>
 
-        <p className="text-center mt-6 text-sm text-muted-foreground">
-          {mode === "staff" ? (
-            <>Don&apos;t have an account?{" "}
-              <Link href="/auth/register" className="text-primary font-medium hover:underline">Create a school account</Link></>
-          ) : (
-            <>Don&apos;t have a parent account?{" "}
-              <Link href="/" className="text-primary font-medium hover:underline">Contact your school</Link></>
+          {error && (
+            <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
           )}
-        </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "staff" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email address</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input id="email" type="email" placeholder="you@school.edu.gh"
+                      value={email} onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10 h-11 rounded-xl border-gray-200 bg-white focus:border-primary" autoComplete="email" disabled={isLoading} required />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input id="password" type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password" value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 pr-10 h-11 rounded-xl border-gray-200 bg-white focus:border-primary" autoComplete="current-password" disabled={isLoading} required />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer" tabIndex={-1}>
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="phone" className="text-sm font-medium text-gray-700">Phone number</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input id="phone" type="tel" placeholder="024 123 4567"
+                      value={phone} onChange={(e) => setPhone(e.target.value)}
+                      className="pl-10 h-11 rounded-xl border-gray-200 bg-white focus:border-primary" autoComplete="tel" disabled={isLoading} required />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pin" className="text-sm font-medium text-gray-700">PIN</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input id="pin" type={showPin ? "text" : "password"}
+                      placeholder="Enter your PIN" value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      className="pl-10 pr-10 h-11 rounded-xl border-gray-200 bg-white focus:border-primary" autoComplete="off"
+                      maxLength={8} inputMode="numeric" pattern="[0-9]*" disabled={isLoading} required />
+                    <button type="button" onClick={() => setShowPin(!showPin)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer" tabIndex={-1}>
+                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold text-white cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-60"
+              style={{ background: "hsl(150 80% 24%)" }}
+            >
+              {isLoading
+                ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Signing in…</>
+                : <><LogIn className="w-4 h-4" /> Sign In</>
+              }
+            </button>
+          </form>
+
+          {mode === "staff" && (
+            <p className="text-center mt-5 text-xs text-gray-500">
+              Forgot password? Contact your school administrator.
+            </p>
+          )}
+
+          <p className="text-center mt-4 text-sm text-gray-500">
+            {mode === "staff" ? (
+              <>New to Skuulr?{" "}
+                <Link href="/auth/register" className="font-semibold hover:underline" style={{ color: "hsl(150 80% 24%)" }}>Register your school</Link></>
+            ) : (
+              <>No account?{" "}
+                <Link href="/" className="font-semibold hover:underline" style={{ color: "hsl(150 80% 24%)" }}>Contact your school</Link></>
+            )}
+          </p>
+        </div>
       </div>
     </div>
   );

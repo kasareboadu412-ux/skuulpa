@@ -48,7 +48,7 @@ export default function SuperAdminLayout({
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("skooly-super-admin-name");
+      const stored = localStorage.getItem("skuulr-super-admin-name");
       if (stored) {
         setAdminName(stored);
         setAdminInitials(
@@ -69,7 +69,7 @@ export default function SuperAdminLayout({
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
-        localStorage.removeItem("skooly-super-admin-name");
+        localStorage.removeItem("skuulr-super-admin-name");
         router.push("/auth/login");
       }
     } catch {
@@ -98,7 +98,7 @@ export default function SuperAdminLayout({
         <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-6">
           <Shield className="h-7 w-7 text-purple-600" />
           <div>
-            <span className="text-lg font-bold text-gray-900">Skooly</span>
+            <span className="text-lg font-bold text-gray-900">Skuulr</span>
             <span className="ml-1.5 text-xs font-medium text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
               Admin
             </span>
@@ -133,7 +133,7 @@ export default function SuperAdminLayout({
 
         {/* Sidebar footer */}
         <div className="border-t border-gray-200 p-4 space-y-2">
-          <p className="text-xs text-gray-400">Skooly v0.1.0</p>
+          <p className="text-xs text-gray-400">Skuulr v0.1.0</p>
           <Link
             href="/dashboard"
             className="flex items-center gap-2 text-xs text-purple-600 hover:text-purple-700 font-medium"
