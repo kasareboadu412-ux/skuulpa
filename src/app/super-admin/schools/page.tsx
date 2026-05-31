@@ -52,6 +52,8 @@ import {
   Phone,
   Calendar,
   Shield,
+  Trash2,
+  ArrowUpCircle,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
@@ -379,6 +381,8 @@ export default function SuperAdminSchools() {
   const [expandedSchool, setExpandedSchool] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<School | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Debounce search
   useEffect(() => {
@@ -424,6 +428,30 @@ export default function SuperAdminSchools() {
   const handleEditStatus = (school: School) => {
     setEditingSchool(school);
     setEditDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/super-admin/schools", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deleteTarget.id }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.error || "Failed to delete school");
+        return;
+      }
+      toast.success(`${deleteTarget.name} has been permanently deleted`);
+      setDeleteTarget(null);
+      void loadSchools();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleQuickAction = async (
@@ -667,13 +695,27 @@ export default function SuperAdminSchools() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEditStatus(school);
                                 }}
+                                title="Manage plan, status & trial"
                               >
-                                <Shield className="h-4 w-4 mr-1" />
-                                Status
+                                <ArrowUpCircle className="h-4 w-4 mr-1" />
+                                Manage
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteTarget(school);
+                                }}
+                                title="Delete school permanently"
+                              >
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                               {expandedSchool === school.id ? (
                                 <ChevronUp className="h-4 w-4 text-gray-400" />
@@ -758,10 +800,20 @@ export default function SuperAdminSchools() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="text-xs"
+                          className="text-xs text-blue-600"
                           onClick={() => handleEditStatus(school)}
                         >
-                          Edit
+                          <ArrowUpCircle className="h-3 w-3 mr-1" />
+                          Manage
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs text-red-500"
+                          onClick={() => setDeleteTarget(school)}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Delete
                         </Button>
                       </div>
                     </div>
@@ -842,13 +894,45 @@ export default function SuperAdminSchools() {
         </CardContent>
       </Card>
 
-      {/* Edit status dialog */}
+      {/* Edit status / plan / trial dialog */}
       <EditStatusDialog
         school={editingSchool}
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         onSaved={loadSchools}
       />
+
+      {/* Delete confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <Trash2 className="h-5 w-5" /> Permanently Delete School
+            </DialogTitle>
+            <DialogDescription>
+              This will <strong>permanently delete</strong> <strong>{deleteTarget?.name}</strong> and
+              all its data — students, fees, payments, teachers, attendance, and reports.
+              This action <strong>cannot be undone</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <span>All school data and staff login accounts will be wiped. The proprietor will lose access immediately.</span>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : "Yes, Delete Permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

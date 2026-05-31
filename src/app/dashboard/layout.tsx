@@ -50,6 +50,7 @@ const navigation = [
   { name: "Teachers", href: "/dashboard/teachers", icon: GraduationCap },
   { name: "Attendance", href: "/dashboard/attendance", icon: ClipboardCheck },
   { name: "Reports", href: "/dashboard/reports", icon: FileBarChart, module: "reports" },
+  { name: "Billing", href: "/dashboard/billing", icon: CreditCard },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
@@ -83,16 +84,22 @@ export default function DashboardLayout({
   });
   const [loggingOut, setLoggingOut] = useState(false);
   const [enabledModules, setEnabledModules] = useState<string[] | null>(null);
+  const [billing, setBilling] = useState<{ expired: boolean; is_trial: boolean; days_left: number | null } | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/schools/modules");
-        if (res.ok) {
-          const data = await res.json();
+        const [modRes, billRes] = await Promise.all([
+          fetch("/api/schools/modules"),
+          fetch("/api/billing/me"),
+        ]);
+        if (modRes.ok) {
+          const data = await modRes.json();
           setEnabledModules(data.modules ?? []);
-        } else {
-          setEnabledModules([]);
+        } else setEnabledModules([]);
+        if (billRes.ok) {
+          const b = (await billRes.json()).data;
+          setBilling({ expired: b.expired, is_trial: b.is_trial, days_left: b.days_left });
         }
       } catch {
         setEnabledModules([]);
@@ -275,6 +282,20 @@ export default function DashboardLayout({
             </DropdownMenuContent>
           </DropdownMenu>
         </header>
+
+        {/* Trial / expiry banner */}
+        {billing && (billing.expired || (billing.is_trial && (billing.days_left ?? 99) <= 7)) && (
+          <Link
+            href="/dashboard/billing"
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white cursor-pointer hover:opacity-95 ${
+              billing.expired ? "bg-red-600" : "bg-amber-500"
+            }`}
+          >
+            {billing.expired
+              ? "⚠ Your subscription has expired — click here to choose a plan and continue using Skuulr."
+              : `Your free trial ends in ${billing.days_left} day${billing.days_left === 1 ? "" : "s"}. Upgrade now →`}
+          </Link>
+        )}
 
         {/* Page content */}
         <main className="p-4 sm:p-6 lg:p-8">{children}</main>

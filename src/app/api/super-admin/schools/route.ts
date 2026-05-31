@@ -131,3 +131,44 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Internal server error" }, { status: 500 });
   }
 }
+
+
+/**
+ * DELETE /api/super-admin/schools  body: { id }
+ * Hard-delete a school and all its data (cascades via FK).
+ * Irreversible — requires super-admin.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireSuperAdmin();
+  if (auth instanceof NextResponse) return auth;
+
+  try {
+    const { id } = await request.json();
+    if (!id) return NextResponse.json({ error: "School ID is required" }, { status: 400 });
+
+    const supabase = getServiceClient();
+
+    // Delete the auth user for the proprietor so they can't re-login.
+    const { data: proprietorTeacher } = await supabase
+      .from("teachers")
+      .select("user_id")
+      .eq("school_id", id)
+      .not("user_id", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    // Delete school (FK cascades handle all child data).
+    const { error } = await supabase.from("schools").delete().eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+    // Best-effort: delete the proprietor's auth account.
+    if (proprietorTeacher?.user_id) {
+      try { await supabase.auth.admin.deleteUser(proprietorTeacher.user_id); } catch {}
+    }
+
+    return NextResponse.json({ data: { id, deleted: true } });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal server error" }, { status: 500 });
+  }
+}
