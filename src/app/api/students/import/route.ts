@@ -17,8 +17,21 @@ interface ImportRow {
   parent_primary_phone?: string;
   parent_secondary_phone?: string;
   parent_email?: string;
+  // Per-category arrears carried from the previous term.
+  balance_tuition?: string | number;
+  balance_bus?: string | number;
+  balance_feeding?: string | number;
+  balance_other?: string | number;
+  // Back-compat: a single combined balance (treated as "other").
   previous_balance?: string | number;
 }
+
+const BALANCE_CATEGORIES: Array<{ key: keyof ImportRow; category: "tuition" | "bus" | "feeding" | "other"; label: string }> = [
+  { key: "balance_tuition", category: "tuition", label: "Previous Term Balance — Tuition" },
+  { key: "balance_bus", category: "bus", label: "Previous Term Balance — Bus" },
+  { key: "balance_feeding", category: "feeding", label: "Previous Term Balance — Feeding" },
+  { key: "balance_other", category: "other", label: "Previous Term Balance — Other" },
+];
 
 interface RowResult {
   row: number;
@@ -40,16 +53,17 @@ async function assignPreviousBalance(
   schoolId: string,
   studentId: string,
   termId: string | null,
-  amount: number
+  amount: number,
+  category: "tuition" | "bus" | "feeding" | "other",
+  label: string
 ): Promise<boolean> {
   if (!termId || amount <= 0) return false;
-  const label = "Previous Term Balance";
 
   const { data: existing } = await db
     .from("fee_structures")
     .select("id")
     .eq("school_id", schoolId)
-    .eq("category", "other")
+    .eq("category", category)
     .eq("name", label)
     .maybeSingle();
 
@@ -57,7 +71,7 @@ async function assignPreviousBalance(
   if (!structureId) {
     const { data: created } = await db
       .from("fee_structures")
-      .insert({ school_id: schoolId, name: label, category: "other", amount, frequency: "termly", is_active: true })
+      .insert({ school_id: schoolId, name: label, category, amount, frequency: "termly", is_active: true })
       .select("id")
       .single();
     structureId = created?.id;
@@ -170,13 +184,18 @@ export async function POST(request: NextRequest) {
 
       try { await applyCurrentTermClassFees(schoolId, student.id, classId); } catch { /* ignore */ }
 
-      // Previous-term balance carried forward.
-      const balance = Number(r.previous_balance ?? 0);
+      // Previous-term balances carried forward, per category.
       let balanceAdded = 0;
-      if (balance > 0) {
-        const ok = await assignPreviousBalance(db, schoolId, student.id, termId, balance);
-        if (ok) balanceAdded = balance;
+      for (const b of BALANCE_CATEGORIES) {
+        let amount = Number(r[b.key] ?? 0);
+        // Fold the legacy single "previous_balance" column into "other".
+        if (b.category === "other") amount += Number(r.previous_balance ?? 0);
+        if (amount > 0) {
+          const ok = await assignPreviousBalance(db, schoolId, student.id, termId, amount, b.category, b.label);
+          if (ok) balanceAdded += amount;
+        }
       }
+      balanceAdded = Math.round(balanceAdded * 100) / 100;
 
       created++;
       results.push({

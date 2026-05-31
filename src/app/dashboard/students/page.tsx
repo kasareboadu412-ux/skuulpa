@@ -441,11 +441,12 @@ function StudentDetailView({
 
 const IMPORT_HEADERS = [
   "first_name", "last_name", "admission_number", "class_name", "date_of_birth",
-  "parent_primary_phone", "parent_secondary_phone", "parent_email", "previous_balance",
+  "parent_primary_phone", "parent_secondary_phone", "parent_email",
+  "balance_tuition", "balance_bus", "balance_feeding", "balance_other",
 ];
 
 function downloadTemplate() {
-  const example = ["Ama", "Mensah", "", "Class 4", "2015-03-12", "0244123456", "", "ama.parent@example.com", "150"];
+  const example = ["Ama", "Mensah", "", "Class 4", "2015-03-12", "0244123456", "", "ama.parent@example.com", "150", "0", "40", "0"];
   const csv = [IMPORT_HEADERS.join(","), example.join(",")].join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -576,7 +577,8 @@ function ImportModal({
                 <ol className="list-decimal list-inside text-gray-600 space-y-1">
                   <li>Download the CSV template and open it in Excel.</li>
                   <li>One student per row. <span className="font-medium">first_name, last_name, parent_primary_phone</span> are required.</li>
-                  <li><span className="font-medium">previous_balance</span> = fees owed from the previous term (added to the student&apos;s account).</li>
+                  <li>Fees owed from the previous term go in the per-category columns —
+                    <span className="font-medium"> balance_tuition, balance_bus, balance_feeding, balance_other</span> — each added to the student&apos;s account under that category. Use 0 or leave blank if none.</li>
                   <li>Leave <span className="font-medium">admission_number</span> blank to auto-generate.</li>
                   <li>Save as CSV and upload below.</li>
                 </ol>
