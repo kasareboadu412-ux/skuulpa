@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
-import { BookOpen, FileText, BarChart3, Plus } from "lucide-react";
+import { BookOpen, FileText, BarChart3, Printer, Wand2, Loader2 } from "lucide-react";
+import { printReportCard, type ReportCardData } from "./print-report";
 import {
   Table,
   TableBody,
@@ -45,9 +53,15 @@ interface ReportCard {
   generated_at: string;
   overall_position: number | null;
   average_score: number | null;
+  teacher_comments: string | null;
+  headteacher_remarks: string | null;
+  data: ReportCardData | null;
   student?: { id: string; first_name: string; last_name: string; class?: { name: string } | null } | null;
-  term?: { id: string; name: string } | null;
+  term?: { id: string; name: string; academic_year?: { name: string } | null } | null;
 }
+
+interface ClassOption { id: string; name: string }
+interface TermOption { id: string; name: string; is_current?: boolean | null }
 
 export default function AcademicsPage() {
   const [activeTab, setActiveTab] = useState("schemes");
@@ -55,19 +69,48 @@ export default function AcademicsPage() {
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [reportCards, setReportCards] = useState<ReportCard[]>([]);
+  const [classes, setClasses] = useState<ClassOption[]>([]);
+  const [terms, setTerms] = useState<TermOption[]>([]);
+  const [schoolName, setSchoolName] = useState("");
+
+  // Bulk-generation controls
+  const [genClass, setGenClass] = useState("");
+  const [genTerm, setGenTerm] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  const loadReportCards = useCallback(async () => {
+    try {
+      const res = await fetch("/api/academics/report-cards");
+      const json = await res.json();
+      if (res.ok) setReportCards(json.data ?? []);
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     (async () => {
       try {
-        const [sRes, aRes, rRes] = await Promise.all([
+        const [sRes, aRes, rRes, cRes, tRes, schoolRes] = await Promise.all([
           fetch("/api/academics/schemes"),
           fetch("/api/academics/assessments"),
           fetch("/api/academics/report-cards"),
+          fetch("/api/classes"),
+          fetch("/api/terms"),
+          fetch("/api/schools/me"),
         ]);
-        const [sData, aData, rData] = await Promise.all([sRes.json(), aRes.json(), rRes.json()]);
+        const [sData, aData, rData, cData, tData, schoolData] = await Promise.all([
+          sRes.json(), aRes.json(), rRes.json(), cRes.json(), tRes.json(), schoolRes.json(),
+        ]);
         if (sRes.ok) setSchemes(sData.data ?? []);
         if (aRes.ok) setAssessments(aData.data ?? []);
         if (rRes.ok) setReportCards(rData.data ?? []);
+        if (cRes.ok) setClasses((cData.data ?? []).map((c: ClassOption) => ({ id: c.id, name: c.name })));
+        if (tRes.ok) {
+          const ts: TermOption[] = tData.data ?? [];
+          setTerms(ts);
+          const current = ts.find((t) => t.is_current);
+          if (current) setGenTerm(current.id);
+        }
+        if (schoolRes.ok) setSchoolName(schoolData.data?.name ?? "");
       } catch {
         toast.error("Failed to load academics");
       } finally {
@@ -75,6 +118,26 @@ export default function AcademicsPage() {
       }
     })();
   }, []);
+
+  const handleGenerate = async () => {
+    if (!genClass || !genTerm) { toast.error("Pick a class and a term"); return; }
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/academics/report-cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ class_id: genClass, term_id: genTerm }),
+      });
+      const json = await res.json();
+      if (!res.ok) { toast.error(json.error || "Failed to generate report cards"); return; }
+      toast.success(`Generated ${json.count ?? 0} report card(s)`);
+      await loadReportCards();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -204,7 +267,42 @@ export default function AcademicsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="report-cards" className="mt-4">
+        <TabsContent value="report-cards" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Generate Report Cards</CardTitle>
+              <CardDescription>
+                Pick a class and term to generate end-of-term reports for the whole class at once.
+                Scores are weighted (continuous assessment vs exam) and students ranked by position.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Class</label>
+                  <Select value={genClass} onValueChange={setGenClass}>
+                    <SelectTrigger className="w-[200px]"><SelectValue placeholder="Select class" /></SelectTrigger>
+                    <SelectContent>
+                      {classes.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Term</label>
+                  <Select value={genTerm} onValueChange={setGenTerm}>
+                    <SelectTrigger className="w-[200px]"><SelectValue placeholder="Select term" /></SelectTrigger>
+                    <SelectContent>
+                      {terms.map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}{t.is_current ? " (current)" : ""}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button onClick={handleGenerate} disabled={generating}>
+                  {generating ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Generating...</> : <><Wand2 className="w-4 h-4 mr-1" />Generate for Class</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Generated Report Cards</CardTitle>
@@ -220,12 +318,13 @@ export default function AcademicsPage() {
                     <TableHead>Average</TableHead>
                     <TableHead>Position</TableHead>
                     <TableHead>Generated</TableHead>
+                    <TableHead className="text-right">Report</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {reportCards.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-gray-500">No report cards generated yet</TableCell>
+                      <TableCell colSpan={7} className="text-center py-8 text-gray-500">No report cards generated yet</TableCell>
                     </TableRow>
                   ) : reportCards.map((rc) => (
                     <TableRow key={rc.id}>
@@ -235,6 +334,22 @@ export default function AcademicsPage() {
                       <TableCell>{rc.average_score !== null ? `${rc.average_score}%` : "—"}</TableCell>
                       <TableCell>{rc.overall_position ?? "—"}</TableCell>
                       <TableCell>{formatDate(rc.generated_at)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!rc.data}
+                          onClick={() => rc.data && printReportCard(rc.data, {
+                            schoolName,
+                            className: rc.student?.class?.name ?? "",
+                            generatedAt: rc.generated_at,
+                            teacherComments: rc.teacher_comments,
+                            headteacherRemarks: rc.headteacher_remarks,
+                          })}
+                        >
+                          <Printer className="w-4 h-4 mr-1" />Print
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
