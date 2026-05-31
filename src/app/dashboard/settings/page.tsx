@@ -332,31 +332,42 @@ export default function SettingsPage() {
               <CardDescription>Grading and assessment weight settings</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Continuous Assessment Weight (%)</Label>
-                <p className="text-sm text-gray-500">CA typically counts for 30% of final grade in Ghana</p>
-                <Input
-                  type="number"
-                  value={Number(getSetting("ca_weight_pct", 30))}
-                  onChange={(e) => updateSetting("ca_weight_pct", Number(e.target.value))}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Continuous Assessment Weight (%)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={Number(getSetting("ca_weight_pct", 30))}
+                    onChange={(e) => {
+                      const ca = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                      updateSetting("ca_weight_pct", ca);
+                      updateSetting("exam_weight_pct", 100 - ca);
+                    }}
+                  />
+                  <p className="text-xs text-gray-500">Class score (non-exam assessments). Ghana default is 30%.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Exam Weight (%)</Label>
+                  <Input type="number" value={100 - Number(getSetting("ca_weight_pct", 30))} disabled />
+                  <p className="text-xs text-gray-500">Automatically the remainder. CA + Exam always equal 100%.</p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Exam Weight (%)</Label>
-                <Input
-                  type="number"
-                  value={Number(getSetting("exam_weight_pct", 70))}
-                  onChange={(e) => updateSetting("exam_weight_pct", Number(e.target.value))}
-                />
-              </div>
+              <p className="text-sm text-gray-600">
+                Report-card subject marks are calculated as
+                <span className="font-medium"> CA% × {Number(getSetting("ca_weight_pct", 30))}% + Exam% × {100 - Number(getSetting("ca_weight_pct", 30))}%</span>.
+                Assessments of type <span className="font-medium">Exam</span> count toward the exam component; all others count as continuous assessment.
+              </p>
               <div className="space-y-2">
                 <Label>Grading Scale (read-only)</Label>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="p-2 border rounded flex justify-between"><span>A (Excellent)</span><span className="font-mono">80-100%</span></div>
                   <div className="p-2 border rounded flex justify-between"><span>B (Very Good)</span><span className="font-mono">70-79%</span></div>
                   <div className="p-2 border rounded flex justify-between"><span>C (Good)</span><span className="font-mono">60-69%</span></div>
-                  <div className="p-2 border rounded flex justify-between"><span>D (Pass)</span><span className="font-mono">50-59%</span></div>
-                  <div className="p-2 border rounded flex justify-between"><span>F (Fail)</span><span className="font-mono">&lt;50%</span></div>
+                  <div className="p-2 border rounded flex justify-between"><span>D (Credit)</span><span className="font-mono">50-59%</span></div>
+                  <div className="p-2 border rounded flex justify-between"><span>E (Pass)</span><span className="font-mono">40-49%</span></div>
+                  <div className="p-2 border rounded flex justify-between"><span>F (Fail)</span><span className="font-mono">&lt;40%</span></div>
                 </div>
               </div>
             </CardContent>

@@ -171,7 +171,8 @@ export async function POST(request: NextRequest) {
     const { data: school } = await supabase
       .from("schools").select("name, settings").eq("id", schoolId).maybeSingle();
     const settings = (school as { settings?: Record<string, unknown> } | null)?.settings ?? {};
-    const caWeightPct = Number(body.ca_weight ?? settings.ca_weight ?? 50);
+    // CA share of the final grade; exam takes the rest. Default 30% CA / 70% exam.
+    const caWeightPct = Number(body.ca_weight ?? settings.ca_weight_pct ?? 30);
     const caW = Math.min(100, Math.max(0, caWeightPct)) / 100;
 
     // Assessments for this class + term.
