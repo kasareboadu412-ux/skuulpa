@@ -224,6 +224,35 @@ export default function SettingsPage() {
                   <Input value={String(getSetting("currency", "GHS"))} onChange={(e) => updateSetting("currency", e.target.value)} />
                 </div>
               </div>
+              <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+                <div>
+                  <Label className="font-semibold">GPS Clock-in Fence</Label>
+                  <p className="text-xs text-gray-500 mt-0.5">Teachers must be within this radius of the school to clock in. Leave coordinates at 0,0 to disable GPS verification.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">School Latitude</Label>
+                    <Input type="number" step="0.000001" placeholder="e.g. 5.6037"
+                      value={String(getSetting("gps_lat", ""))}
+                      onChange={(e) => updateSetting("gps_lat", parseFloat(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">School Longitude</Label>
+                    <Input type="number" step="0.000001" placeholder="e.g. -0.1870"
+                      value={String(getSetting("gps_lng", ""))}
+                      onChange={(e) => updateSetting("gps_lng", parseFloat(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Allowed Radius (metres)</Label>
+                    <Input type="number" min="50" max="2000" placeholder="200"
+                      value={String(getSetting("gps_radius_m", 200))}
+                      onChange={(e) => updateSetting("gps_radius_m", parseInt(e.target.value) || 200)} />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Tip: open Google Maps, right-click your school → copy the coordinates shown. Paste lat first, lng second.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

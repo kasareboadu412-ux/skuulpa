@@ -45,6 +45,7 @@ const navigation = [
   { name: "Bus", href: "/dashboard/bus", icon: Bus, module: "bus" },
   { name: "Feeding", href: "/dashboard/feeding", icon: UtensilsCrossed, module: "feeding" },
   { name: "Academics", href: "/dashboard/academics", icon: BookOpen, module: "academics" },
+  { name: "Classes", href: "/dashboard/classes", icon: BookOpen, module: "academics" },
   { name: "Teachers", href: "/dashboard/teachers", icon: GraduationCap },
   { name: "Attendance", href: "/dashboard/attendance", icon: ClipboardCheck },
   { name: "Reports", href: "/dashboard/reports", icon: FileBarChart, module: "reports" },
