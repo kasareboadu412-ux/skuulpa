@@ -41,7 +41,7 @@ const navigation = [
   { name: "Admissions", href: "/dashboard/admissions", icon: UserPlus },
   { name: "Students", href: "/dashboard/students", icon: Users },
   { name: "Fees", href: "/dashboard/fees", icon: CreditCard },
-  { name: "Expenses", href: "/dashboard/expenses", icon: Wallet },
+  { name: "Accounting", href: "/dashboard/expenses", icon: Wallet },
   { name: "Bus", href: "/dashboard/bus", icon: Bus },
   { name: "Feeding", href: "/dashboard/feeding", icon: UtensilsCrossed },
   { name: "Academics", href: "/dashboard/academics", icon: BookOpen },

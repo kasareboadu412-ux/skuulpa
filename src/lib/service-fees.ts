@@ -122,3 +122,47 @@ export async function assignServiceFee(opts: {
   if (assignErr || !assignment) return null;
   return { feeStructureId, feeAssignmentId: (assignment as { id: string }).id, termId };
 }
+
+/**
+ * Remove the current-term service charge for a student when their subscription
+ * is cancelled. Only assignments with NO payments are deleted — anything the
+ * parent has already paid toward is preserved as a record.
+ *
+ * Returns the number of assignments removed.
+ */
+export async function removeUnpaidServiceFees(
+  schoolId: string,
+  studentId: string,
+  category: "bus" | "feeding"
+): Promise<number> {
+  const db = getServiceClient();
+  const termId = await getCurrentTermId(db, schoolId);
+  if (!termId) return 0;
+
+  const { data: assignments } = await db
+    .from("fee_assignments")
+    .select("id, fee_structure:fee_structures!inner(category, school_id), fee_payments(status)")
+    .eq("student_id", studentId)
+    .eq("term_id", termId);
+
+  type Row = {
+    id: string;
+    fee_structure: { category: string; school_id: string } | { category: string; school_id: string }[] | null;
+    fee_payments: Array<{ status: string }> | null;
+  };
+
+  const toDelete: string[] = [];
+  for (const a of (assignments ?? []) as unknown as Row[]) {
+    const fs = Array.isArray(a.fee_structure) ? a.fee_structure[0] : a.fee_structure;
+    if (!fs || fs.category !== category || fs.school_id !== schoolId) continue;
+    const hasPayment = (a.fee_payments ?? []).some(
+      (p) => p.status === "confirmed" || p.status === "partial"
+    );
+    if (!hasPayment) toDelete.push(a.id);
+  }
+
+  if (toDelete.length > 0) {
+    await db.from("fee_assignments").delete().in("id", toDelete);
+  }
+  return toDelete.length;
+}

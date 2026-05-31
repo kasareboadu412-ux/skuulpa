@@ -31,6 +31,7 @@ import {
   Users,
   Route as RouteIcon,
   DollarSign,
+  Trash2,
 } from "lucide-react";
 import {
   BarChart,
@@ -397,6 +398,8 @@ export default function BusPage() {
   const [activeTab, setActiveTab] = useState<"routes" | "subscriptions" | "stats">("routes");
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [showSubModal, setShowSubModal] = useState(false);
+  const [removeSub, setRemoveSub] = useState<BusSubscription | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [editRoute, setEditRoute] = useState<BusRoute | null>(null);
   const [routes, setRoutes] = useState<BusRoute[]>([]);
   const [subscriptions, setSubscriptions] = useState<BusSubscription[]>([]);
@@ -422,6 +425,23 @@ export default function BusPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const handleRemoveSub = async () => {
+    if (!removeSub) return;
+    setRemoving(true);
+    try {
+      const res = await fetch(`/api/bus/subscriptions/${removeSub.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || "Failed to remove subscription"); return; }
+      toast.success(data.fees_removed > 0 ? "Subscription removed and unpaid fee cleared" : "Subscription removed");
+      setRemoveSub(null);
+      void load();
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -556,11 +576,12 @@ export default function BusPage() {
                     <th className="pb-3 font-medium">Trip Type</th>
                     <th className="pb-3 font-medium">Fee</th>
                     <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {subscriptions.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center py-8 text-gray-500">No subscriptions yet.</td></tr>
+                    <tr><td colSpan={7} className="text-center py-8 text-gray-500">No subscriptions yet.</td></tr>
                   ) : subscriptions.map((s) => (
                     <tr key={s.id} className="border-b last:border-0 hover:bg-gray-50">
                       <td className="py-3 font-medium text-gray-900">{s.student ? `${s.student.first_name} ${s.student.last_name}` : "—"}</td>
@@ -569,6 +590,9 @@ export default function BusPage() {
                       <td className="py-3 capitalize text-gray-600">{s.trip_type.replace(/_/g, " ")}</td>
                       <td className="py-3 font-semibold">{formatCurrency(Number(s.fee_amount))}</td>
                       <td className="py-3"><Badge variant={s.is_active ? "success" : "secondary"}>{s.is_active ? "Active" : "Inactive"}</Badge></td>
+                      <td className="py-3 text-right">
+                        <Button variant="ghost" size="icon" onClick={() => setRemoveSub(s)}><Trash2 className="h-4 w-4 text-red-600" /></Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -640,6 +664,25 @@ export default function BusPage() {
         onSaved={() => void load()}
         routes={routes}
       />
+
+      {removeSub && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-sm">
+            <CardHeader>
+              <CardTitle>Remove subscription?</CardTitle>
+              <CardDescription>
+                {removeSub.student ? `${removeSub.student.first_name} ${removeSub.student.last_name}` : "This student"} will be unsubscribed from {removeSub.bus_route?.name ?? "the route"}. Any unpaid bus fee for the current term will be removed; payments already made are kept.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRemoveSub(null)} disabled={removing}>Cancel</Button>
+              <Button className="bg-red-600 hover:bg-red-700" onClick={handleRemoveSub} disabled={removing}>
+                {removing ? "Removing..." : "Remove"}
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
