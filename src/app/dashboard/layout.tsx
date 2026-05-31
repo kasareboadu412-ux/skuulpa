@@ -42,6 +42,7 @@ const navigation = [
   { name: "Students", href: "/dashboard/students", icon: Users },
   { name: "Fees", href: "/dashboard/fees", icon: CreditCard },
   { name: "Accounting", href: "/dashboard/expenses", icon: Wallet, module: "accounting" },
+  { name: "Payroll", href: "/dashboard/payroll", icon: Users, module: "accounting" },
   { name: "Bus", href: "/dashboard/bus", icon: Bus, module: "bus" },
   { name: "Feeding", href: "/dashboard/feeding", icon: UtensilsCrossed, module: "feeding" },
   { name: "Academics", href: "/dashboard/academics", icon: BookOpen, module: "academics" },
