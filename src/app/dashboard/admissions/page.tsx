@@ -107,7 +107,14 @@ export default function AdmissionsPage() {
         toast.error(data.error || "Failed to update");
         return;
       }
-      toast.success(`Application ${status}`);
+      if (data.parent_login?.pin) {
+        toast.success(
+          `Application accepted. Parent login → phone ${data.parent_login.phone}, PIN ${data.parent_login.pin}`,
+          { duration: 12000 }
+        );
+      } else {
+        toast.success(`Application ${status}`);
+      }
       void loadApplications();
     } catch {
       toast.error("Network error");

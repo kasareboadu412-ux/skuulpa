@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     const { data: broadcast, error: broadcastError } = await supabase
       .from("whatsapp_broadcasts")
-      .insert([{ school_id: schoolId, target: student_id, message_text: message, sent_count: targets.length, status: "sent" }])
+      .insert([{ school_id: schoolId, target: student_id, message_text: message, sent_count: targets.length, status: "pending" }])
       .select("*")
       .single();
 

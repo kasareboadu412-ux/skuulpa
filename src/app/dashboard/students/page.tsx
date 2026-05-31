@@ -150,7 +150,22 @@ function StudentForm({
         toast.error(data.error || "Failed to save student");
         return;
       }
-      toast.success(editStudent ? "Student updated" : "Student added");
+      if (editStudent) {
+        toast.success("Student updated");
+      } else {
+        const feeNote =
+          typeof data.fees_applied === "number" && data.fees_applied > 0
+            ? ` ${data.fees_applied} class fee${data.fees_applied > 1 ? "s" : ""} applied for the current term.`
+            : "";
+        if (data.parent_login?.pin) {
+          toast.success(
+            `Student added. Parent login → phone ${data.parent_login.phone}, PIN ${data.parent_login.pin}.${feeNote}`,
+            { duration: 12000 }
+          );
+        } else {
+          toast.success(`Student added.${feeNote}`);
+        }
+      }
       onSaved();
       onClose();
     } catch {

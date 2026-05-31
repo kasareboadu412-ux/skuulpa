@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { requireStaff } from "@/lib/auth-guard";
 import { getServiceClient } from "@/lib/supabase-server";
+import { ensureParentAccount } from "@/lib/parent-account";
+import { applyCurrentTermClassFees } from "@/lib/apply-fees";
 
 export const runtime = "nodejs";
 
@@ -153,7 +155,11 @@ export async function PATCH(request: NextRequest) {
 
         const admissionNumber = `SKL-${year}-${((count ?? 0) + 1).toString().padStart(4, "0")}`;
 
-        await supabase.from("students").insert([{
+        // Provision a parent login account so the new family can access the portal.
+        const parentName = `${application.parent_first_name} ${application.parent_last_name}`;
+        const parentResult = await ensureParentAccount(application.parent_phone, parentName);
+
+        const { data: newStudent } = await supabase.from("students").insert([{
           school_id: schoolId,
           first_name: application.child_first_name,
           last_name: application.child_last_name,
@@ -163,9 +169,23 @@ export async function PATCH(request: NextRequest) {
           parent_primary_phone: application.parent_phone,
           parent_secondary_phone: application.parent_secondary_phone,
           parent_email: application.parent_email,
+          parent_user_id: parentResult.userId,
           enrollment_date: new Date().toISOString().split("T")[0],
           status: "active",
-        }]);
+        }]).select("id").single();
+
+        // Auto-apply the current term's class fees to the new student.
+        if (newStudent?.id) {
+          await applyCurrentTermClassFees(schoolId, newStudent.id, application.applied_class_id);
+        }
+
+        if (parentResult.created && parentResult.pin) {
+          return NextResponse.json({
+            data,
+            parent_login: { phone: application.parent_phone, pin: parentResult.pin },
+            student_id: newStudent?.id ?? null,
+          });
+        }
       }
     }
 

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, getServiceClient } from "@/lib/supabase-server";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   try {
     const user = await getCurrentUser();

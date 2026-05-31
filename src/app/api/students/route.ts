@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseServerClient, getServiceClient } from "@/lib/supabase-server";
 import { requireStaff } from "@/lib/auth-guard";
+import { ensureParentAccount } from "@/lib/parent-account";
+import { applyCurrentTermClassFees } from "@/lib/apply-fees";
 
 export const runtime = "nodejs";
 
@@ -56,7 +58,36 @@ export async function POST(request: NextRequest) {
       console.error("Students POST error:", error);
       return NextResponse.json({ error: error.message || "Failed to create student", code: error.code }, { status: 400 });
     }
-    return NextResponse.json({ data }, { status: 201 });
+
+    // Provision a parent login account so the parent can access the portal.
+    let parentLogin: { phone: string; pin: string } | null = null;
+    const parentPhone = (data as { parent_primary_phone: string | null }).parent_primary_phone;
+    if (parentPhone) {
+      const parentName = `${(data as { first_name: string }).first_name} ${(data as { last_name: string }).last_name}`;
+      const result = await ensureParentAccount(parentPhone, parentName);
+      if (result.userId) {
+        const admin = getServiceClient();
+        await admin
+          .from("students")
+          .update({ parent_user_id: result.userId })
+          .eq("id", (data as { id: string }).id);
+        if (result.created && result.pin) {
+          parentLogin = { phone: parentPhone, pin: result.pin };
+        }
+      }
+    }
+
+    // Auto-apply the current term's class fees to the new student.
+    const fees = await applyCurrentTermClassFees(
+      schoolId,
+      (data as { id: string }).id,
+      (data as { class_id: string | null }).class_id
+    );
+
+    return NextResponse.json(
+      { data, parent_login: parentLogin, fees_applied: fees.count },
+      { status: 201 }
+    );
   } catch (err) {
     console.error("Students POST exception:", err);
     return NextResponse.json({ error: err instanceof Error ? err.message : "Internal server error" }, { status: 500 });

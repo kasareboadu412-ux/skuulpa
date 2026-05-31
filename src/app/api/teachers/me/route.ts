@@ -68,7 +68,7 @@ export async function GET() {
 }
 
 /**
- * POST /api/teachers/me/clock — clock-in/out for current teacher.
+ * POST /api/teachers/me — clock-in/out for current teacher.
  * Body: { action: "in" | "out" }
  */
 export async function POST(request: Request) {

@@ -43,7 +43,7 @@ interface Student {
 interface BehaviorLog {
   id: string;
   type: string | null;
-  description: string;
+  description: string | null;
   date: string;
   shared_with_parent: boolean;
   teacher: { first_name: string; last_name: string } | null;

@@ -128,9 +128,16 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Idempotent: students who already have this fee for this term are skipped
+      // (the unique(student_id, fee_structure_id, term_id) constraint) instead of
+      // failing the whole batch — so re-running after adding a student just fills
+      // in the newcomers.
       const { data, error } = await supabase
         .from("fee_assignments")
-        .insert(assignments)
+        .upsert(assignments, {
+          onConflict: "student_id,fee_structure_id,term_id",
+          ignoreDuplicates: true,
+        })
         .select("*, student:students(*), fee_structure:fee_structures(*), term:terms(*)");
 
       if (error) return NextResponse.json({ error: "Failed to create fee assignments" }, { status: 400 });
