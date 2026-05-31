@@ -38,16 +38,16 @@ import { toast } from "sonner";
 
 const navigation = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Admissions", href: "/dashboard/admissions", icon: UserPlus },
+  { name: "Admissions", href: "/dashboard/admissions", icon: UserPlus, module: "admissions" },
   { name: "Students", href: "/dashboard/students", icon: Users },
   { name: "Fees", href: "/dashboard/fees", icon: CreditCard },
-  { name: "Accounting", href: "/dashboard/expenses", icon: Wallet },
-  { name: "Bus", href: "/dashboard/bus", icon: Bus },
-  { name: "Feeding", href: "/dashboard/feeding", icon: UtensilsCrossed },
-  { name: "Academics", href: "/dashboard/academics", icon: BookOpen },
+  { name: "Accounting", href: "/dashboard/expenses", icon: Wallet, module: "accounting" },
+  { name: "Bus", href: "/dashboard/bus", icon: Bus, module: "bus" },
+  { name: "Feeding", href: "/dashboard/feeding", icon: UtensilsCrossed, module: "feeding" },
+  { name: "Academics", href: "/dashboard/academics", icon: BookOpen, module: "academics" },
   { name: "Teachers", href: "/dashboard/teachers", icon: GraduationCap },
   { name: "Attendance", href: "/dashboard/attendance", icon: ClipboardCheck },
-  { name: "Reports", href: "/dashboard/reports", icon: FileBarChart },
+  { name: "Reports", href: "/dashboard/reports", icon: FileBarChart, module: "reports" },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
@@ -80,6 +80,27 @@ export default function DashboardLayout({
     initials: "AD",
   });
   const [loggingOut, setLoggingOut] = useState(false);
+  const [enabledModules, setEnabledModules] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/schools/modules");
+        if (res.ok) {
+          const data = await res.json();
+          setEnabledModules(data.modules ?? []);
+        } else {
+          setEnabledModules([]);
+        }
+      } catch {
+        setEnabledModules([]);
+      }
+    })();
+  }, []);
+
+  const visibleNav = navigation.filter(
+    (item) => !item.module || enabledModules === null || enabledModules.includes(item.module)
+  );
 
   useEffect(() => {
     (async () => {
@@ -159,7 +180,7 @@ export default function DashboardLayout({
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-          {navigation.map((item) => {
+          {visibleNav.map((item) => {
             const isActive =
               item.href === "/dashboard"
                 ? pathname === "/dashboard"

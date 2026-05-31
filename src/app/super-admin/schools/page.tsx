@@ -151,34 +151,54 @@ function EditStatusDialog({
   onSaved: () => void;
 }) {
   const [newStatus, setNewStatus] = useState<string>("");
+  const [planId, setPlanId] = useState<string>("");
+  const [plans, setPlans] = useState<Array<{ id: string; name: string }>>([]);
+  const [extendDays, setExtendDays] = useState<string>("0");
   const [saving, setSaving] = useState(false);
 
+  const currentPlanId = school?.school_subscriptions?.[0]?.plan_id ?? "";
+
   useEffect(() => {
-    if (school) setNewStatus(school.status);
-  }, [school]);
+    if (school) {
+      setNewStatus(school.status);
+      setPlanId(currentPlanId);
+      setExtendDays("0");
+    }
+  }, [school, currentPlanId]);
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/super-admin/plans");
+        const data = await res.json();
+        if (res.ok) setPlans((data.data ?? []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })));
+      } catch { /* ignore */ }
+    })();
+  }, [open]);
 
   const handleSave = async () => {
-    if (!school || !newStatus || newStatus === school.status) {
-      onOpenChange(false);
-      return;
-    }
+    if (!school) { onOpenChange(false); return; }
+
+    const body: Record<string, unknown> = { id: school.id };
+    if (newStatus && newStatus !== school.status) body.status = newStatus;
+    if (planId && planId !== currentPlanId) body.plan_id = planId;
+    if (Number(extendDays) > 0) body.extend_trial_days = Number(extendDays);
+
+    if (Object.keys(body).length === 1) { onOpenChange(false); return; }
 
     setSaving(true);
     try {
       const res = await fetch("/api/super-admin/schools", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: school.id, status: newStatus }),
+        body: JSON.stringify(body),
       });
-
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Failed to update status");
+        throw new Error(err.error || "Failed to update");
       }
-
-      toast.success(
-        `${school.name} is now ${newStatus.replace("_", " ")}`
-      );
+      toast.success(`${school.name} updated`);
       onOpenChange(false);
       onSaved();
     } catch (err) {
@@ -192,27 +212,45 @@ function EditStatusDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit School Status</DialogTitle>
+          <DialogTitle>Manage School</DialogTitle>
           <DialogDescription>
-            Change the platform status for <strong>{school?.name}</strong>
+            Status, subscription plan and trial for <strong>{school?.name}</strong>
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
-          <Select value={newStatus} onValueChange={setNewStatus}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="pending_approval">Pending Approval</SelectItem>
-              <SelectItem value="suspended">Suspended</SelectItem>
-              <SelectItem value="disabled">Disabled</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="py-4 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-500">Platform Status</label>
+            <Select value={newStatus} onValueChange={setNewStatus}>
+              <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="pending_approval">Pending Approval</SelectItem>
+                <SelectItem value="suspended">Suspended</SelectItem>
+                <SelectItem value="disabled">Disabled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-500">Subscription Plan</label>
+            <Select value={planId} onValueChange={setPlanId}>
+              <SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
+              <SelectContent>
+                {plans.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-gray-400">Changing the plan immediately updates which modules this school can access.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-500">Extend Trial (days)</label>
+            <Input type="number" min="0" value={extendDays} onChange={(e) => setExtendDays(e.target.value)} />
+            <p className="text-xs text-gray-400">Adds days to the trial end date. Leave 0 for no change.</p>
+          </div>
 
           {newStatus === "suspended" && (
-            <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3">
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
                 <p className="text-xs text-amber-700">
@@ -233,7 +271,7 @@ function EditStatusDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || newStatus === school?.status}
+            disabled={saving}
           >
             {saving ? (
               <>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth-guard";
+import { requireStaffModule } from "@/lib/auth-guard";
 import { getServiceClient } from "@/lib/supabase-server";
 import { ensureParentAccount } from "@/lib/parent-account";
 import { applyCurrentTermClassFees } from "@/lib/apply-fees";
@@ -8,7 +8,7 @@ import { applyCurrentTermClassFees } from "@/lib/apply-fees";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireStaff();
+  const auth = await requireStaffModule("admissions");
   if (auth instanceof NextResponse) return auth;
   const { schoolId } = auth;
 
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireStaff();
+  const auth = await requireStaffModule("admissions");
   if (auth instanceof NextResponse) return auth;
   const { schoolId } = auth;
 

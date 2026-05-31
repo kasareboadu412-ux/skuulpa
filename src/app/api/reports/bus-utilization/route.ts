@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth-guard";
+import { requireStaffModule } from "@/lib/auth-guard";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireStaff();
+  const auth = await requireStaffModule("reports");
   if (auth instanceof NextResponse) return auth;
   const { schoolId } = auth;
 

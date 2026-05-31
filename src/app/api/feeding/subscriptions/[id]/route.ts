@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth-guard";
+import { requireStaffModule } from "@/lib/auth-guard";
 import { removeUnpaidServiceFees } from "@/lib/service-fees";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireStaff();
+  const auth = await requireStaffModule("feeding");
   if (auth instanceof NextResponse) return auth;
   const { schoolId, role } = auth;
 

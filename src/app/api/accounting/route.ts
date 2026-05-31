@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth-guard";
+import { requireStaffModule } from "@/lib/auth-guard";
 
 export const runtime = "nodejs";
 
@@ -27,7 +27,7 @@ interface Txn {
  * net profit/loss, category breakdowns and a merged transaction ledger.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireStaff();
+  const auth = await requireStaffModule("accounting");
   if (auth instanceof NextResponse) return auth;
   const { schoolId } = auth;
 

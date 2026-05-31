@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, getServiceClient } from "./supabase-server";
+import { getSchoolModules, type ModuleKey } from "./modules";
 
 export type StaffAuthContext = {
   userId: string;
@@ -52,6 +53,27 @@ export async function requireStaff(): Promise<StaffAuthContext | NextResponse> {
   }
 
   return { userId: user.id, schoolId, role };
+}
+
+/**
+ * Require an authenticated staff user whose school's plan includes a given
+ * module. Returns the staff context, or a 401/403 Response (403 with an
+ * upgrade hint when the module is not in their plan).
+ */
+export async function requireStaffModule(
+  moduleKey: ModuleKey
+): Promise<StaffAuthContext | NextResponse> {
+  const auth = await requireStaff();
+  if (auth instanceof NextResponse) return auth;
+
+  const modules = await getSchoolModules(auth.schoolId);
+  if (!modules.includes(moduleKey)) {
+    return NextResponse.json(
+      { error: "This module is not included in your subscription plan.", code: "module_not_in_plan", module: moduleKey },
+      { status: 403 }
+    );
+  }
+  return auth;
 }
 
 /**

@@ -41,6 +41,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { GATED_MODULES, splitFeatures, combineFeatures } from "@/lib/modules-shared";
 import { toast } from "sonner";
 
 // ─── Types ───
@@ -73,6 +74,7 @@ type PlanFormData = {
   max_students: number;
   max_teachers: number;
   features: PlanFeature[];
+  modules: string[];
   is_active: boolean;
   sort_order: number;
 };
@@ -86,6 +88,7 @@ const emptyForm: PlanFormData = {
   max_students: 50,
   max_teachers: 10,
   features: [],
+  modules: GATED_MODULES.map((m) => m.key),
   is_active: true,
   sort_order: 0,
 };
@@ -110,6 +113,7 @@ function PlanFormDialog({
 
   useEffect(() => {
     if (plan) {
+      const { modules, marketing } = splitFeatures(plan.features || []);
       setForm({
         name: plan.name,
         code: plan.code,
@@ -118,7 +122,8 @@ function PlanFormDialog({
         price_yearly: plan.price_yearly,
         max_students: plan.max_students,
         max_teachers: plan.max_teachers,
-        features: plan.features || [],
+        features: marketing,
+        modules,
         is_active: plan.is_active,
         sort_order: plan.sort_order,
       });
@@ -153,9 +158,9 @@ function PlanFormDialog({
     try {
       const url = "/api/super-admin/plans";
       const method = isEditing ? "PATCH" : "POST";
-      const body = isEditing
-        ? { id: plan!.id, ...form }
-        : form;
+      const { modules, features, ...rest } = form;
+      const payload = { ...rest, features: combineFeatures(modules, features) };
+      const body = isEditing ? { id: plan!.id, ...payload } : payload;
 
       const res = await fetch(url, {
         method,
@@ -338,7 +343,37 @@ function PlanFormDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Features</Label>
+            <Label>Modules included in this tier</Label>
+            <p className="text-xs text-gray-500">
+              Schools on this plan can access the checked modules. Unchecked modules are hidden and blocked.
+              Core areas (Students, Fees, Teachers, Attendance, Settings) are always included.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {GATED_MODULES.map((m) => {
+                const checked = form.modules.includes(m.key);
+                return (
+                  <label key={m.key} className="flex items-center gap-2 rounded-md border p-2 text-sm cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          modules: e.target.checked
+                            ? [...prev.modules, m.key]
+                            : prev.modules.filter((k) => k !== m.key),
+                        }))
+                      }
+                    />
+                    {m.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Marketing features (shown on pricing page)</Label>
             <div className="flex gap-2">
               <Input
                 value={featureInput}
@@ -623,27 +658,31 @@ export default function SuperAdminPlans() {
                   </div>
                 </div>
 
-                {/* Features */}
+                {/* Modules + Features */}
                 <div className="flex-1">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                    Features
+                    Modules
                   </p>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {GATED_MODULES.map((m) => {
+                      const on = splitFeatures(plan.features || []).modules.includes(m.key);
+                      return (
+                        <Badge key={m.key} variant={on ? "secondary" : "outline"} className={on ? "" : "opacity-40 line-through"}>
+                          {m.label}
+                        </Badge>
+                      );
+                    })}
+                  </div>
                   <ul className="space-y-1.5">
-                    {plan.features?.length > 0 ? (
-                      plan.features.map((feature, idx) => (
-                        <li
-                          key={`${plan.id}-feature-${idx}`}
-                          className="flex items-start gap-2 text-sm text-gray-700"
-                        >
-                          <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                          {feature}
-                        </li>
-                      ))
-                    ) : (
-                      <li className="text-sm text-gray-400 italic">
-                        No features listed
+                    {splitFeatures(plan.features || []).marketing.map((feature, idx) => (
+                      <li
+                        key={`${plan.id}-feature-${idx}`}
+                        className="flex items-start gap-2 text-sm text-gray-700"
+                      >
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        {feature}
                       </li>
-                    )}
+                    ))}
                   </ul>
                 </div>
 

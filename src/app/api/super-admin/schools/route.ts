@@ -58,26 +58,71 @@ export async function PATCH(request: NextRequest) {
   try {
     const supabase = getServiceClient();
     const body = await request.json();
-    const { id, status } = body;
+    const { id, status, plan_id, extend_trial_days } = body;
 
     if (!id) return NextResponse.json({ error: "School ID is required" }, { status: 400 });
 
-    if (!status || !["active", "suspended", "pending_approval", "disabled"].includes(status)) {
-      return NextResponse.json({ error: "Invalid status. Must be one of: active, suspended, pending_approval, disabled" }, { status: 400 });
+    // ── Status change ──
+    if (status) {
+      if (!["active", "suspended", "pending_approval", "disabled"].includes(status)) {
+        return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+      }
+      const updateData: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+      if (status === "active") {
+        updateData.approved_at = new Date().toISOString();
+        updateData.approved_by = userId;
+      }
+      const { error } = await supabase.from("schools").update(updateData).eq("id", id);
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    const updateData: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    // ── Plan change / trial extension on the school's latest subscription ──
+    if (plan_id || extend_trial_days) {
+      const { data: subRow } = await supabase
+        .from("school_subscriptions")
+        .select("id, trial_ends_at, plan_id")
+        .eq("school_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (status === "active") {
-      updateData.approved_at = new Date().toISOString();
-      updateData.approved_by = userId;
+      const subUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+      if (plan_id) {
+        const { data: plan } = await supabase.from("subscription_plans").select("id").eq("id", plan_id).maybeSingle();
+        if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+        subUpdate.plan_id = plan_id;
+        // Also mirror the plan code onto the school for quick reads.
+        const { data: planCode } = await supabase.from("subscription_plans").select("code").eq("id", plan_id).maybeSingle();
+        if (planCode) await supabase.from("schools").update({ subscription_plan: planCode.code }).eq("id", id);
+      }
+
+      if (extend_trial_days) {
+        const base = subRow?.trial_ends_at ? new Date(subRow.trial_ends_at) : new Date();
+        const from = base.getTime() > Date.now() ? base : new Date();
+        from.setDate(from.getDate() + Number(extend_trial_days));
+        subUpdate.trial_ends_at = from.toISOString();
+        subUpdate.status = "trial";
+      }
+
+      if (subRow?.id) {
+        const { error: subErr } = await supabase.from("school_subscriptions").update(subUpdate).eq("id", subRow.id);
+        if (subErr) return NextResponse.json({ error: subErr.message }, { status: 400 });
+      } else if (plan_id) {
+        // No subscription yet — create one.
+        await supabase.from("school_subscriptions").insert({
+          school_id: id,
+          plan_id,
+          status: "active",
+          current_period_start: new Date().toISOString(),
+        });
+      }
     }
 
     const { data, error } = await supabase
       .from("schools")
-      .update(updateData)
-      .eq("id", id)
       .select("*, school_subscriptions(*, subscription_plans(name, code))")
+      .eq("id", id)
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import { requireStaff } from "@/lib/auth-guard";
+import { requireStaffModule } from "@/lib/auth-guard";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireStaff();
+  const auth = await requireStaffModule("academics");
   if (auth instanceof NextResponse) return auth;
   const { schoolId } = auth;
 
@@ -141,7 +141,7 @@ function computeReport(
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireStaff();
+  const auth = await requireStaffModule("academics");
   if (auth instanceof NextResponse) return auth;
   const { schoolId } = auth;
 
