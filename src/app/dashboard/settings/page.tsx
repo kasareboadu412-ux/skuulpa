@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Save, School, CreditCard, BookOpen, GraduationCap, Plus, Edit, Trash2, X } from "lucide-react";
+import { Save, School, CreditCard, BookOpen, GraduationCap, Plus, Edit, Trash2, X, MessageSquare } from "lucide-react";
 
 interface SchoolSettings {
   id: string;
@@ -187,6 +187,7 @@ export default function SettingsPage() {
           <TabsTrigger value="classes"><GraduationCap className="w-4 h-4 mr-2" />Classes</TabsTrigger>
           <TabsTrigger value="fees"><CreditCard className="w-4 h-4 mr-2" />Fee Settings</TabsTrigger>
           <TabsTrigger value="academics"><BookOpen className="w-4 h-4 mr-2" />Academics</TabsTrigger>
+          <TabsTrigger value="messaging"><MessageSquare className="w-4 h-4 mr-2" />Messaging</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-4 mt-4">
@@ -399,6 +400,49 @@ export default function SettingsPage() {
                   <div className="p-2 border rounded flex justify-between"><span>F (Fail)</span><span className="font-mono">&lt;40%</span></div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="messaging" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>SMS Messaging (Arkesel)</CardTitle>
+              <CardDescription>
+                Connect your own Arkesel account to send SMS to parents. Messages are billed directly to your Arkesel balance — Skuulr adds no markup.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 space-y-1">
+                <p className="font-semibold">How to set up (one-time, ~10 minutes)</p>
+                <ol className="list-decimal list-inside text-xs text-blue-800 space-y-0.5">
+                  <li>Create a free account at <span className="font-medium">arkesel.com</span> and buy SMS credits (pay with MoMo).</li>
+                  <li>Register a <strong>Sender ID</strong> (e.g. your school’s short name) — approval is usually same-day.</li>
+                  <li>Copy your <strong>API key</strong> from the Arkesel dashboard and paste both below.</li>
+                </ol>
+              </div>
+              <div className="space-y-2">
+                <Label>Arkesel API Key</Label>
+                <Input
+                  type="password"
+                  placeholder="paste your Arkesel API key"
+                  value={String(getSetting("arkesel_api_key", ""))}
+                  onChange={(e) => updateSetting("arkesel_api_key", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Sender ID</Label>
+                <Input
+                  placeholder="e.g. STJOSEPHS (max 11 characters)"
+                  maxLength={11}
+                  value={String(getSetting("arkesel_sender_id", ""))}
+                  onChange={(e) => updateSetting("arkesel_sender_id", e.target.value)}
+                />
+                <p className="text-xs text-gray-400">Must match a Sender ID approved in your Arkesel account. Up to 11 characters, letters/numbers.</p>
+              </div>
+              <p className="text-xs text-gray-500">
+                Leave these blank to keep using free WhatsApp click-to-send instead. Save changes to apply.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
